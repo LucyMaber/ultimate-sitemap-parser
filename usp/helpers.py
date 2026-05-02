@@ -1,5 +1,7 @@
 """Helper utilities."""
 
+
+import contextlib
 import datetime
 import gzip as gzip_lib
 import html
@@ -53,7 +55,7 @@ def is_http_url(url: str) -> bool:
     if url is None:
         log.debug("URL is None")
         return False
-    if len(url) == 0:
+    if not url:
         log.debug("URL is empty")
         return False
 
@@ -94,9 +96,7 @@ def html_unescape_strip(string: str | None) -> str | None:
     """
     if string:
         string = html.unescape(string)
-        string = string.strip()
-        if not string:
-            string = None
+        string = string.strip() or None
     return string
 
 
@@ -112,15 +112,12 @@ def parse_iso8601_date(date_string: str) -> datetime.datetime | None:
     if not date_string:
         raise SitemapException("Date string is unset.")
 
-    try:
+    with contextlib.suppress(ValueError):
         if HAS_DATETIME_NEW_ISOPARSER:
             # From Python 3.11, fromisosort is able to parse nearly any valid ISO 8601 string
             return datetime.datetime.fromisoformat(date_string)
         # Try the more efficient ISO 8601 parser
         return dateutil_isoparse(date_string)
-    except ValueError:
-        pass
-
     # Try the less efficient general parser
     try:
         return dateutil_parse(date_string)
@@ -167,30 +164,31 @@ def get_url_retry_on_client_errors(
     """
     assert retry_count > 0, "Retry count must be positive."
 
-    response = None
-    for retry in range(0, retry_count):
+    response: AbstractWebClientResponse | None = None
+    for _ in range(retry_count):
         log.info(f"Fetching URL {url}...")
         response = web_client.get(url)
 
-        if isinstance(response, WebClientErrorResponse):
-            if quiet_404 and response.message() == _404_log_message:
-                log_level = logging.INFO
-            else:
-                log_level = logging.WARNING
-            log.log(log_level, f"Request for URL {url} failed: {response.message()}")
+        if not isinstance(response, WebClientErrorResponse):
+            return response
 
-            if response.retryable():
-                log.info(f"Retrying URL {url} in {sleep_between_retries} seconds...")
-                time.sleep(sleep_between_retries)
+        log_level = (
+            logging.INFO
+            if quiet_404 and response.message() == _404_log_message
+            else logging.WARNING
+        )
+        log.log(log_level, f"Request for URL {url} failed: {response.message()}")
 
-            else:
-                log.info(f"Not retrying for URL {url}")
-                return response
+        if response.retryable():
+            log.info(f"Retrying URL {url} in {sleep_between_retries} seconds...")
+            time.sleep(sleep_between_retries)
 
         else:
+            log.info(f"Not retrying for URL {url}")
             return response
 
     log.info(f"Giving up on URL {url}")
+    assert response is not None
     return response
 
 
@@ -208,11 +206,7 @@ def __response_is_gzipped_data(
     url_path = unquote_plus(uri.path)
     content_type = response.header("content-type") or ""
 
-    if url_path.lower().endswith(".gz") or "gzip" in content_type.lower():
-        return True
-
-    else:
-        return False
+    return bool(url_path.lower().endswith(".gz") or "gzip" in content_type.lower())
 
 
 def gunzip(data: bytes) -> bytes:
@@ -228,9 +222,9 @@ def gunzip(data: bytes) -> bytes:
         raise GunzipException("Data is None.")
 
     if not isinstance(data, bytes):
-        raise GunzipException(f"Data is not bytes: {str(data)}")
+        raise GunzipException(f"Data is not bytes: {data}")
 
-    if len(data) == 0:
+    if not data:
         raise GunzipException(
             "Data is empty (no way an empty string is a valid Gzip archive)."
         )
@@ -238,13 +232,13 @@ def gunzip(data: bytes) -> bytes:
     try:
         gunzipped_data = gzip_lib.decompress(data)
     except Exception as ex:
-        raise GunzipException(f"Unable to gunzip data: {str(ex)}")
+        raise GunzipException(f"Unable to gunzip data: {str(ex)}") from ex
 
     if gunzipped_data is None:
         raise GunzipException("Gunzipped data is None.")
 
     if not isinstance(gunzipped_data, bytes):
-        raise GunzipException("Gunzipped data is not bytes.")
+        raise GunzipException(f"Gunzipped data is not bytes: {gunzipped_data}")
 
     return gunzipped_data
 
@@ -271,12 +265,7 @@ def ungzipped_response_content(
                 f"Unable to gunzip response for {url}, maybe it's a non-gzipped sitemap: {ex}"
             )
 
-    # FIXME other encodings
-    data = data.decode("utf-8-sig", errors="replace")
-
-    assert isinstance(data, str)
-
-    return data
+    return data.decode("utf-8-sig", errors="replace")
 
 
 def strip_url_to_homepage(url: str) -> str:
@@ -298,7 +287,7 @@ def strip_url_to_homepage(url: str) -> str:
             "http",
             "https",
         ], "Scheme must be http:// or https://"
-        uri = (
+        parsed_uri = (
             uri.scheme,
             uri.netloc,
             "/",  # path
@@ -306,8 +295,8 @@ def strip_url_to_homepage(url: str) -> str:
             "",  # query
             "",  # fragment
         )
-        url = urlunparse(uri)
+        url = urlunparse(parsed_uri)
     except Exception as ex:
-        raise StripURLToHomepageException(f"Unable to parse URL {url}: {ex}")
+        raise StripURLToHomepageException(f"Unable to parse URL {url}: {ex}") from ex
 
     return url

@@ -246,8 +246,5 @@ class RequestWaiter:
             self.is_first = False
             return
 
-        wait_f = 1.0
-        if self.random_wait:
-            wait_f = random.uniform(0.5, 1.5)
-
+        wait_f = random.uniform(0.5, 1.5) if self.random_wait else 1.0
         time.sleep(self.wait_s * wait_f)

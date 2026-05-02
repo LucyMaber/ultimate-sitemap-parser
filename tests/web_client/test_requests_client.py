@@ -22,7 +22,7 @@ class TestRequestsClient:
         return RequestsWebClient()
 
     def test_get(self, client, requests_mock):
-        test_url = self.TEST_BASE_URL + "/"
+        test_url = f"{self.TEST_BASE_URL}/"
         test_content = "This is a homepage."
 
         requests_mock.get(
@@ -31,10 +31,9 @@ class TestRequestsClient:
             text=test_content,
         )
 
-        response = client.get(test_url)
-
-        assert response
-        assert isinstance(response, AbstractWebClientSuccessResponse)
+        response = self._extracted_from_test_get_max_response_data_length_11(
+            client, test_url, AbstractWebClientSuccessResponse
+        )
         assert response.status_code() == HTTPStatus.OK.value
         assert response.status_message() == HTTPStatus.OK.phrase
         assert response.header("Content-Type") == self.TEST_CONTENT_TYPE
@@ -43,7 +42,7 @@ class TestRequestsClient:
         assert response.raw_data().decode("utf-8") == test_content
 
     def test_get_user_agent(self, client, requests_mock):
-        test_url = self.TEST_BASE_URL + "/"
+        test_url = f"{self.TEST_BASE_URL}/"
 
         def content_user_agent(request, context):
             context.status_code = HTTPStatus.OK.value
@@ -63,7 +62,7 @@ class TestRequestsClient:
         assert content == f"ultimate_sitemap_parser/{__version__}"
 
     def test_get_not_found(self, client, requests_mock):
-        test_url = self.TEST_BASE_URL + "/404.html"
+        test_url = f"{self.TEST_BASE_URL}/404.html"
 
         requests_mock.get(
             test_url,
@@ -73,19 +72,17 @@ class TestRequestsClient:
             text="This page does not exist.",
         )
 
-        response = client.get(test_url)
-
-        assert response
-        assert isinstance(response, WebClientErrorResponse)
+        response = self._extracted_from_test_get_max_response_data_length_11(
+            client, test_url, WebClientErrorResponse
+        )
         assert response.retryable() is False
 
     def test_get_nonexistent_domain(self, client):
         test_url = "http://www.totallydoesnotexisthjkfsdhkfsd.com/some_page.html"
 
-        response = client.get(test_url)
-
-        assert response
-        assert isinstance(response, WebClientErrorResponse)
+        response = self._extracted_from_test_get_max_response_data_length_11(
+            client, test_url, WebClientErrorResponse
+        )
         assert response.retryable() is False
         assert (
             re.search(
@@ -119,7 +116,7 @@ class TestRequestsClient:
         actual_length = 1024 * 1024
         max_length = 1024 * 512
 
-        test_url = self.TEST_BASE_URL + "/huge_page.html"
+        test_url = f"{self.TEST_BASE_URL}/huge_page.html"
         test_content = "a" * actual_length
 
         requests_mock.get(
@@ -130,17 +127,22 @@ class TestRequestsClient:
 
         client.set_max_response_data_length(max_length)
 
-        response = client.get(test_url)
-
-        assert response
-        assert isinstance(response, AbstractWebClientSuccessResponse)
-
+        response = self._extracted_from_test_get_max_response_data_length_11(
+            client, test_url, AbstractWebClientSuccessResponse
+        )
         response_length = len(response.raw_data())
         assert response_length == max_length
 
+    # TODO Rename this here and in `test_get`, `test_get_not_found`, `test_get_nonexistent_domain` and `test_get_max_response_data_length`
+    def _extracted_from_test_get_max_response_data_length_11(self, client, test_url, arg2):
+        result = client.get(test_url)
+        assert result
+        assert isinstance(result, arg2)
+        return result
+
     def test_error_page_log(self, client, requests_mock, caplog):
         caplog.set_level(logging.DEBUG)
-        test_url = self.TEST_BASE_URL + "/error_page.html"
+        test_url = f"{self.TEST_BASE_URL}/error_page.html"
 
         requests_mock.get(
             test_url,
@@ -158,21 +160,21 @@ class TestRequestsClient:
 
     def test_no_request_wait(self, mocked_sleep):
         client = RequestsWebClient()
-        client.get(self.TEST_BASE_URL + "/page1.html")
-        client.get(self.TEST_BASE_URL + "/page2.html")
+        client.get(f"{self.TEST_BASE_URL}/page1.html")
+        client.get(f"{self.TEST_BASE_URL}/page2.html")
         mocked_sleep.assert_not_called()
 
     def test_request_wait(self, mocked_sleep):
         client = RequestsWebClient(wait=1)
-        client.get(self.TEST_BASE_URL + "/page1.html")
+        client.get(f"{self.TEST_BASE_URL}/page1.html")
         mocked_sleep.assert_not_called()
-        client.get(self.TEST_BASE_URL + "/page2.html")
+        client.get(f"{self.TEST_BASE_URL}/page2.html")
         mocked_sleep.assert_called_once_with(1)
 
     def test_request_wait_random(self, mocked_sleep):
         client = RequestsWebClient(wait=1, random_wait=True)
-        client.get(self.TEST_BASE_URL + "/page1.html")
-        client.get(self.TEST_BASE_URL + "/page2.html")
+        client.get(f"{self.TEST_BASE_URL}/page1.html")
+        client.get(f"{self.TEST_BASE_URL}/page2.html")
         mocked_sleep.assert_called_once()
         assert 0.5 <= mocked_sleep.call_args[0][0] <= 1.5
         assert mocked_sleep.call_args[0][0] != 1

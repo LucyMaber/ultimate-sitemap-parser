@@ -8,6 +8,7 @@
 """
 
 import abc
+import datetime
 import logging
 import re
 import xml.parsers.expat
@@ -32,6 +33,17 @@ from .objects.page import (
     SitemapPage,
     SitemapPageChangeFrequency,
     SitemapVideo,
+    SitemapVideoPrice,
+    SitemapVideoRestriction,
+    SitemapMobile,
+    SitemapGeo,
+    SitemapPageMap,
+    SitemapPageMapAttribute,
+    SitemapPageMapDataObject,
+    SitemapCodeSearch,
+    SitemapSemanticWebDataset,
+    SitemapSemanticWebLinkedDataPrefix,
+    SitemapSemanticWebSparqlEndpoint,
 )
 from .objects.sitemap import (
     AbstractSitemap,
@@ -42,6 +54,7 @@ from .objects.sitemap import (
     PagesRSSSitemap,
     PagesTextSitemap,
     PagesXMLSitemap,
+    SemanticWebSitemap,
 )
 from .web_client.abstract_client import (
     AbstractWebClient,
@@ -178,7 +191,7 @@ class SitemapFetcher:
         # MIME types returned in Content-Type are unpredictable, so peek into the content instead
         if response_content[:20].strip().startswith("<"):
             # XML sitemap (the specific kind is to be determined later)
-            parser = XMLSitemapParser(
+            parser: AbstractSitemapParser = XMLSitemapParser(
                 url=self._url,
                 content=response_content,
                 recursion_level=self._recursion_level,
@@ -434,7 +447,7 @@ class XMLSitemapParser(AbstractSitemapParser):
         )
 
         # Will be initialized when the type of sitemap is known
-        self._concrete_parser = None
+        self._concrete_parser: AbstractXMLSitemapParser | None = None
         # Whether this is a malformed sitemap with no namespace
         self._is_non_ns_sitemap = False
 
@@ -493,7 +506,17 @@ class XMLSitemapParser(AbstractSitemapParser):
                 f"Unable to determine namespace for element '{name}'"
             )
 
-        if "/sitemap/" in namespace_url:
+        if "/geo/schemas/sitemap/" in namespace_url:
+            name = f"geo:{name}"
+        elif "baidu.com/schemas/sitemap-mobile" in namespace_url:
+            name = f"mobile:{name}"
+        elif "codesearch/schemas/sitemap" in namespace_url:
+            name = f"codesearch:{name}"
+        elif "/sitemap-pagemap/" in namespace_url:
+            name = f"pagemap:{name}"
+        elif "sw.deri.org" in namespace_url and "scschema" in namespace_url:
+            name = f"sc:{name}"
+        elif "/sitemap/" in namespace_url:
             name = f"sitemap:{name}"
         elif "/sitemap-news/" in namespace_url:
             name = f"news:{name}"
@@ -554,6 +577,11 @@ class XMLSitemapParser(AbstractSitemapParser):
 
             elif name == "feed":
                 self._concrete_parser = PagesAtomSitemapParser(
+                    url=self._url,
+                )
+
+            elif name == "sc:dataset":
+                self._concrete_parser = SemanticWebSitemapParser(
                     url=self._url,
                 )
 
@@ -695,13 +723,13 @@ class IndexXMLSitemapParser(AbstractXMLSitemapParser):
 
         self._web_client = web_client
         self._recursion_level = recursion_level
-        self._sub_sitemap_urls = []
+        self._sub_sitemap_urls: list[str] = []
         self._parent_urls = parent_urls
 
     def xml_element_end(self, name: str) -> None:
         if name == "sitemap:loc":
             sub_sitemap_url = html_unescape_strip(self._last_char_data)
-            if not is_http_url(sub_sitemap_url):
+            if not sub_sitemap_url or not is_http_url(sub_sitemap_url):
                 log.warning(
                     f"Sub-sitemap URL does not look like one: {sub_sitemap_url}"
                 )
@@ -748,9 +776,7 @@ class IndexXMLSitemapParser(AbstractXMLSitemapParser):
 
             sub_sitemaps.append(fetched_sitemap)
 
-        index_sitemap = IndexXMLSitemap(url=self._url, sub_sitemaps=sub_sitemaps)
-
-        return index_sitemap
+        return IndexXMLSitemap(url=self._url, sub_sitemaps=sub_sitemaps)
 
 
 MIN_VALID_PRIORITY = Decimal("0.0")
@@ -768,11 +794,11 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
         __slots__ = ["loc", "caption", "geo_location", "title", "license"]
 
         def __init__(self):
-            self.loc = None
-            self.caption = None
-            self.geo_location = None
-            self.title = None
-            self.license = None
+            self.loc: str | None = None
+            self.caption: str | None = None
+            self.geo_location: str | None = None
+            self.title: str | None = None
+            self.license: str | None = None
 
         def __hash__(self):
             return hash(
@@ -811,28 +837,28 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
         ]
 
         def __init__(self):
-            self.thumbnail_loc = None
-            self.title = None
-            self.description = None
-            self.content_loc = None
-            self.player_loc = None
-            self.duration = None
-            self.expiration_date = None
-            self.rating = None
-            self.view_count = None
-            self.publication_date = None
-            self.family_friendly = None
-            self.restriction = None
-            self.restriction_relationship = None
-            self.platform = None
-            self.platform_relationship = None
-            self.requires_subscription = None
-            self.uploader = None
-            self.uploader_info = None
-            self.live = None
-            self.tags = []
-            self.prices = []
-            self.dcterms_valid = None
+            self.thumbnail_loc: str | None = None
+            self.title: str | None = None
+            self.description: str | None = None
+            self.content_loc: str | None = None
+            self.player_loc: str | None = None
+            self.duration: str | None = None
+            self.expiration_date: str | None = None
+            self.rating: str | None = None
+            self.view_count: str | None = None
+            self.publication_date: str | None = None
+            self.family_friendly: str | None = None
+            self.restriction: str | None = None
+            self.restriction_relationship: str | None = None
+            self.platform: str | None = None
+            self.platform_relationship: str | None = None
+            self.requires_subscription: str | None = None
+            self.uploader: str | None = None
+            self.uploader_info: str | None = None
+            self.live: str | None = None
+            self.tags: list[str] = []
+            self.prices: list[SitemapVideoPrice] = []
+            self.dcterms_valid: str | None = None
 
         def __hash__(self):
             return hash(
@@ -844,6 +870,16 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
                     self.player_loc,
                 )
             )
+
+    class DataObject:
+        """Data class for holding PageMap DataObject data while parsing."""
+
+        __slots__ = ["type", "id", "attributes"]
+
+        def __init__(self):
+            self.type: str | None = None
+            self.id: str | None = None
+            self.attributes: list[tuple[str, str]] = []
 
     class Page:
         """Simple data class for holding various properties for a single <url> entry while parsing."""
@@ -864,24 +900,42 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
             "images",
             "videos",
             "alternates",
+            "mobile_type",
+            "geo_format",
+            "handheld",
+            "page_map_objects",
+            "codesearch_filetype",
+            "codesearch_license",
+            "codesearch_filename",
+            "codesearch_packageurl",
+            "codesearch_packagemap",
         ]
 
         def __init__(self):
-            self.url = None
-            self.last_modified = None
-            self.change_frequency = None
-            self.priority = None
-            self.news_title = None
-            self.news_publish_date = None
-            self.news_publication_name = None
-            self.news_publication_language = None
-            self.news_access = None
-            self.news_genres = None
-            self.news_keywords = None
-            self.news_stock_tickers = None
-            self.images = []
-            self.videos = []
-            self.alternates = []
+            self.url: str | None = None
+            self.last_modified: str | None = None
+            self.change_frequency: str | None = None
+            self.priority: str | None = None
+            self.news_title: str | None = None
+            self.news_publish_date: str | None = None
+            self.news_publication_name: str | None = None
+            self.news_publication_language: str | None = None
+            self.news_access: str | None = None
+            self.news_genres: str | None = None
+            self.news_keywords: str | None = None
+            self.news_stock_tickers: str | None = None
+            self.images: list[PagesXMLSitemapParser.Image] = []
+            self.videos: list[PagesXMLSitemapParser.Video] = []
+            self.alternates: list[tuple[str, str]] = []
+            self.mobile_type: str | None = None
+            self.geo_format: str | None = None
+            self.handheld: str | None = None
+            self.page_map_objects: list[PagesXMLSitemapParser.DataObject] | None = None
+            self.codesearch_filetype: str | None = None
+            self.codesearch_license: str | None = None
+            self.codesearch_filename: str | None = None
+            self.codesearch_packageurl: str | None = None
+            self.codesearch_packagemap: str | None = None
 
         def __hash__(self):
             return hash(
@@ -900,41 +954,44 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
                 log.error("URL is unset")
                 return None
 
-            last_modified = html_unescape_strip(self.last_modified)
-            if last_modified:
-                last_modified = parse_iso8601_date(last_modified)
+            last_modified_raw = html_unescape_strip(self.last_modified)
+            last_modified: datetime.datetime | None = None
+            if last_modified_raw:
+                last_modified = parse_iso8601_date(last_modified_raw)
 
-            change_frequency = html_unescape_strip(self.change_frequency)
-            if change_frequency:
-                change_frequency = change_frequency.lower()
-                if SitemapPageChangeFrequency.has_value(change_frequency):
-                    change_frequency = SitemapPageChangeFrequency(change_frequency)
+            change_frequency_raw = html_unescape_strip(self.change_frequency)
+            change_frequency: SitemapPageChangeFrequency | None = None
+            if change_frequency_raw:
+                change_frequency_raw = change_frequency_raw.lower()
+                if SitemapPageChangeFrequency.has_value(change_frequency_raw):
+                    change_frequency = SitemapPageChangeFrequency(change_frequency_raw)
                 else:
                     log.warning(
                         "Invalid change frequency, defaulting to 'always'.".format()
                     )
                     change_frequency = SitemapPageChangeFrequency.ALWAYS
-                assert isinstance(change_frequency, SitemapPageChangeFrequency)
 
-            priority = html_unescape_strip(self.priority)
-            if priority:
+            priority_raw = html_unescape_strip(self.priority)
+            priority: Decimal = SITEMAP_PAGE_DEFAULT_PRIORITY
+            if priority_raw:
                 try:
-                    priority = Decimal(priority)
+                    priority = Decimal(priority_raw)
 
                     if priority < MIN_VALID_PRIORITY or priority > MAX_VALID_PRIORITY:
                         log.warning(f"Priority is not within 0 and 1: {priority}")
                         priority = SITEMAP_PAGE_DEFAULT_PRIORITY
                 except InvalidOperation:
-                    log.warning(f"Invalid priority: {priority}")
+                    log.warning(f"Invalid priority: {priority_raw}")
                     priority = SITEMAP_PAGE_DEFAULT_PRIORITY
-            else:
-                priority = SITEMAP_PAGE_DEFAULT_PRIORITY
 
             news_title = html_unescape_strip(self.news_title)
 
-            news_publish_date = html_unescape_strip(self.news_publish_date)
-            if news_publish_date:
-                news_publish_date = parse_iso8601_date(date_string=news_publish_date)
+            news_publish_date_raw = html_unescape_strip(self.news_publish_date)
+            news_publish_date: datetime.datetime | None = None
+            if news_publish_date_raw:
+                news_publish_date = parse_iso8601_date(
+                    date_string=news_publish_date_raw
+                )
 
             news_publication_name = html_unescape_strip(self.news_publication_name)
             news_publication_language = html_unescape_strip(
@@ -942,23 +999,22 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
             )
             news_access = html_unescape_strip(self.news_access)
 
-            news_genres = html_unescape_strip(self.news_genres)
-            if news_genres:
-                news_genres = [x.strip() for x in news_genres.split(",")]
-            else:
-                news_genres = []
+            news_genres_raw = html_unescape_strip(self.news_genres)
+            news_genres: list[str] = []
+            if news_genres_raw:
+                news_genres = [x.strip() for x in news_genres_raw.split(",")]
 
-            news_keywords = html_unescape_strip(self.news_keywords)
-            if news_keywords:
-                news_keywords = [x.strip() for x in news_keywords.split(",")]
-            else:
-                news_keywords = []
+            news_keywords_raw = html_unescape_strip(self.news_keywords)
+            news_keywords: list[str] = []
+            if news_keywords_raw:
+                news_keywords = [x.strip() for x in news_keywords_raw.split(",")]
 
-            news_stock_tickers = html_unescape_strip(self.news_stock_tickers)
-            if news_stock_tickers:
-                news_stock_tickers = [x.strip() for x in news_stock_tickers.split(",")]
-            else:
-                news_stock_tickers = []
+            news_stock_tickers_raw = html_unescape_strip(self.news_stock_tickers)
+            news_stock_tickers: list[str] = []
+            if news_stock_tickers_raw:
+                news_stock_tickers = [
+                    x.strip() for x in news_stock_tickers_raw.split(",")
+                ]
 
             sitemap_news_story = None
             if news_title and news_publish_date:
@@ -984,62 +1040,62 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
                         license_=image.license,
                     )
                     for image in self.images
+                    if image.loc
                 ]
 
             sitemap_videos = None
             if len(self.videos) > 0:
                 parsed_videos = []
                 for video in self.videos:
-                    duration = html_unescape_strip(video.duration)
-                    if duration:
+                    duration_raw = html_unescape_strip(video.duration)
+                    duration: int | None = None
+                    if duration_raw:
                         try:
-                            duration = int(duration)
+                            duration = int(duration_raw)
                         except ValueError:
                             duration = None
-                    else:
-                        duration = None
 
-                    expiration_date = html_unescape_strip(video.expiration_date)
-                    if expiration_date:
-                        expiration_date = parse_iso8601_date(expiration_date)
+                    expiration_date_raw = html_unescape_strip(video.expiration_date)
+                    expiration_date: datetime.datetime | None = None
+                    if expiration_date_raw:
+                        expiration_date = parse_iso8601_date(expiration_date_raw)
 
-                    rating = html_unescape_strip(video.rating)
-                    if rating:
+                    rating_raw = html_unescape_strip(video.rating)
+                    rating: Decimal | str | None = None
+                    if rating_raw:
                         try:
-                            rating = Decimal(rating)
+                            rating = Decimal(rating_raw)
                         except InvalidOperation:
-                            pass
+                            rating = rating_raw
 
-                    view_count = html_unescape_strip(video.view_count)
-                    if view_count:
+                    view_count_raw = html_unescape_strip(video.view_count)
+                    view_count: int | None = None
+                    if view_count_raw:
                         try:
-                            view_count = int(view_count)
+                            view_count = int(view_count_raw)
                         except ValueError:
                             view_count = None
-                    else:
-                        view_count = None
 
-                    publication_date = html_unescape_strip(video.publication_date)
-                    if publication_date:
-                        publication_date = parse_iso8601_date(publication_date)
+                    publication_date_raw = html_unescape_strip(video.publication_date)
+                    publication_date: datetime.datetime | None = None
+                    if publication_date_raw:
+                        publication_date = parse_iso8601_date(publication_date_raw)
 
-                    restriction = html_unescape_strip(video.restriction)
-                    if restriction:
+                    restriction_raw = html_unescape_strip(video.restriction)
+                    restriction: SitemapVideoRestriction | None = None
+                    if restriction_raw:
                         restriction = (
                             video.restriction_relationship,
-                            tuple([x for x in restriction.split(" ") if x]),
+                            tuple([x for x in restriction_raw.split(" ") if x]),
                         )
-                    else:
-                        restriction = None
 
-                    platform = html_unescape_strip(video.platform)
-                    if platform:
+                    platform_raw = html_unescape_strip(video.platform)
+                    platform: SitemapVideoRestriction | None = None
+                    if platform_raw:
                         platform = (
                             video.platform_relationship,
-                            tuple([x for x in platform.split(" ") if x]),
+                            tuple([x for x in platform_raw.split(" ") if x]),
                         )
-                    else:
-                        platform = None
 
                     parsed_video = SitemapVideo(
                         thumbnail_loc=html_unescape_strip(video.thumbnail_loc),
@@ -1078,6 +1134,48 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
             if len(self.alternates) > 0:
                 alternates = self.alternates
 
+            mobile = None
+            if self.mobile_type:
+                mobile = SitemapMobile(type=self.mobile_type)
+
+            geo = None
+            if self.geo_format:
+                geo = SitemapGeo(format=self.geo_format)
+
+            page_map = None
+            if self.page_map_objects is not None:
+                page_map = SitemapPageMap(
+                    data_objects=[
+                        SitemapPageMapDataObject(
+                            type=obj.type,
+                            id=obj.id,
+                            attributes=[
+                                SitemapPageMapAttribute(name=n, value=v)
+                                for n, v in obj.attributes
+                            ],
+                        )
+                        for obj in self.page_map_objects
+                    ]
+                )
+
+            code_search = None
+            if any(
+                [
+                    self.codesearch_filetype,
+                    self.codesearch_license,
+                    self.codesearch_filename,
+                    self.codesearch_packageurl,
+                    self.codesearch_packagemap,
+                ]
+            ):
+                code_search = SitemapCodeSearch(
+                    filetype=self.codesearch_filetype,
+                    license=self.codesearch_license,
+                    filename=self.codesearch_filename,
+                    packageurl=self.codesearch_packageurl,
+                    packagemap=self.codesearch_packagemap,
+                )
+
             return SitemapPage(
                 url=url,
                 last_modified=last_modified,
@@ -1087,6 +1185,11 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
                 images=sitemap_images,
                 videos=sitemap_videos,
                 alternates=alternates,
+                mobile=mobile,
+                geo=geo,
+                handheld=self.handheld,
+                page_map=page_map,
+                code_search=code_search,
             )
 
     __slots__ = [
@@ -1095,16 +1198,20 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
         "_page_urls",
         "_current_image",
         "_current_video",
+        "_current_data_object",
+        "_current_attribute_name",
     ]
 
     def __init__(self, url: str):
         super().__init__(url=url)
 
-        self._current_page = None
-        self._pages = []
-        self._page_urls = set()
-        self._current_image = None
-        self._current_video = None
+        self._current_page: PagesXMLSitemapParser.Page | None = None
+        self._pages: list[PagesXMLSitemapParser.Page] = []
+        self._page_urls: set[str] = set()
+        self._current_image: PagesXMLSitemapParser.Image | None = None
+        self._current_video: PagesXMLSitemapParser.Video | None = None
+        self._current_data_object: PagesXMLSitemapParser.DataObject | None = None
+        self._current_attribute_name: str | None = None
 
     def xml_element_start(self, name: str, attrs: dict[str, str]) -> None:
         super().xml_element_start(name=name, attrs=attrs)
@@ -1132,38 +1239,62 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
         elif name == "video:restriction":
             if self._current_video:
                 self._current_video.restriction_relationship = attrs.get(
-                    "relationship", None
+                    "relationship"
                 )
         elif name == "video:platform":
             if self._current_video:
                 self._current_video.platform_relationship = attrs.get(
-                    "relationship", None
+                    "relationship"
                 )
         elif name == "video:uploader":
             if self._current_video:
-                self._current_video.uploader_info = attrs.get("info", None)
+                self._current_video.uploader_info = attrs.get("info")
         elif name == "video:price":
             if self._current_video:
                 self._current_video.prices.append(
                     (
                         None,
-                        attrs.get("currency", None),
-                        attrs.get("type", None),
-                        attrs.get("info", None),
+                        attrs.get("currency"),
+                        attrs.get("type"),
+                        attrs.get("info"),
                     )
                 )
+        elif name == "mobile:mobile":
+            if not self._current_page:
+                log.warning("Skipping <mobile:mobile> outside <url>.")
+                return
+            self._current_page.mobile_type = attrs.get("type")
         elif name == "link":
             if not self._current_page:
                 log.warning("Skipping <link> outside <url>.")
                 return
             if "rel" not in attrs or attrs["rel"] != "alternate":
                 log.warning(f"<link> element is missing rel attribute: {attrs}.")
+            elif attrs.get("media") == "handheld" and "href" in attrs:
+                self._current_page.handheld = attrs["href"]
             elif "hreflang" not in attrs or "href" not in attrs:
                 log.warning(
                     f"<link> element is missing hreflang or href attributes: {attrs}."
                 )
             else:
                 self._current_page.alternates.append((attrs["hreflang"], attrs["href"]))
+        elif name == "pagemap:PageMap":
+            if not self._current_page:
+                log.warning("Skipping <pagemap:PageMap> outside <url>.")
+                return
+            self._current_page.page_map_objects = []
+        elif name == "pagemap:DataObject":
+            if not self._current_page or self._current_page.page_map_objects is None:
+                log.warning("Skipping <pagemap:DataObject> outside <pagemap:PageMap>.")
+                return
+            self._current_data_object = self.DataObject()
+            self._current_data_object.type = attrs.get("type")
+            self._current_data_object.id = attrs.get("id")
+        elif name == "pagemap:Attribute":
+            if self._current_data_object is None:
+                log.warning("Skipping <pagemap:Attribute> outside <pagemap:DataObject>.")
+                return
+            self._current_attribute_name = attrs.get("name")
 
     def __require_last_char_data_to_be_set(self, name: str) -> None:
         if not self._last_char_data:
@@ -1178,21 +1309,22 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
             return
 
         if name == "sitemap:url":
-            if self._current_page.url and self._current_page.url not in self._page_urls:
+            if self._current_page and self._current_page.url and self._current_page.url not in self._page_urls:
                 self._pages.append(self._current_page)
                 self._page_urls.add(self._current_page.url)
-            elif not self._current_page.url:
+            elif self._current_page and not self._current_page.url:
                 log.debug("Skipping malformed <url> entry because URL is unset.")
             self._current_page = None
         elif name == "image:image":
-            if self._current_image:
+            if self._current_page and self._current_image:
                 self._current_page.images.append(self._current_image)
             self._current_image = None
         elif name == "video:video":
-            if self._current_video:
+            if self._current_page and self._current_video:
                 self._current_page.videos.append(self._current_video)
             self._current_video = None
         else:
+            assert self._current_page is not None
             if name == "sitemap:loc":
                 # Every entry should have <loc>, skip malformed rows when missing.
                 if self._last_char_data:
@@ -1251,16 +1383,20 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
                     log.warning("Skipping malformed <image:loc>.")
 
             elif name == "image:caption":
-                self._current_image.caption = self._last_char_data
+                if self._current_image:
+                    self._current_image.caption = self._last_char_data
 
             elif name == "image:geo_location":
-                self._current_image.geo_location = self._last_char_data
+                if self._current_image:
+                    self._current_image.geo_location = self._last_char_data
 
             elif name == "image:title":
-                self._current_image.title = self._last_char_data
+                if self._current_image:
+                    self._current_image.title = self._last_char_data
 
             elif name == "image:license":
-                self._current_image.license = self._last_char_data
+                if self._current_image:
+                    self._current_image.license = self._last_char_data
 
             elif name == "video:thumbnail_loc":
                 if self._current_video and self._last_char_data:
@@ -1293,40 +1429,88 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
                     log.warning("Skipping malformed <video:player_loc>.")
 
             elif name == "video:duration":
-                self._current_video.duration = self._last_char_data
+                if self._current_video:
+                    self._current_video.duration = self._last_char_data
 
             elif name == "video:expiration_date":
-                self._current_video.expiration_date = self._last_char_data
+                if self._current_video:
+                    self._current_video.expiration_date = self._last_char_data
 
             elif name == "video:rating":
-                self._current_video.rating = self._last_char_data
+                if self._current_video:
+                    self._current_video.rating = self._last_char_data
 
             elif name == "video:view_count":
-                self._current_video.view_count = self._last_char_data
+                if self._current_video:
+                    self._current_video.view_count = self._last_char_data
 
             elif name == "video:publication_date":
-                self._current_video.publication_date = self._last_char_data
+                if self._current_video:
+                    self._current_video.publication_date = self._last_char_data
 
             elif name == "video:family_friendly":
-                self._current_video.family_friendly = self._last_char_data
+                if self._current_video:
+                    self._current_video.family_friendly = self._last_char_data
 
             elif name == "video:restriction":
-                self._current_video.restriction = self._last_char_data
+                if self._current_video:
+                    self._current_video.restriction = self._last_char_data
 
             elif name == "video:platform":
-                self._current_video.platform = self._last_char_data
+                if self._current_video:
+                    self._current_video.platform = self._last_char_data
 
             elif name == "video:requires_subscription":
-                self._current_video.requires_subscription = self._last_char_data
+                if self._current_video:
+                    self._current_video.requires_subscription = self._last_char_data
 
             elif name == "video:uploader":
-                self._current_video.uploader = self._last_char_data
+                if self._current_video:
+                    self._current_video.uploader = self._last_char_data
 
             elif name == "video:live":
-                self._current_video.live = self._last_char_data
+                if self._current_video:
+                    self._current_video.live = self._last_char_data
 
             elif name == "video:tag":
-                self._current_video.tags.append(self._last_char_data)
+                if self._current_video:
+                    self._current_video.tags.append(self._last_char_data)
+
+            elif name == "geo:format":
+                if self._current_page:
+                    self._current_page.geo_format = self._last_char_data
+
+            elif name == "pagemap:Attribute":
+                if self._current_data_object is not None and self._current_attribute_name:
+                    self._current_data_object.attributes.append(
+                        (self._current_attribute_name, self._last_char_data or "")
+                    )
+                self._current_attribute_name = None
+
+            elif name == "pagemap:DataObject":
+                if self._current_page and self._current_page.page_map_objects is not None and self._current_data_object is not None:
+                    self._current_page.page_map_objects.append(self._current_data_object)
+                self._current_data_object = None
+
+            elif name == "codesearch:filetype":
+                if self._current_page:
+                    self._current_page.codesearch_filetype = self._last_char_data
+
+            elif name == "codesearch:license":
+                if self._current_page:
+                    self._current_page.codesearch_license = self._last_char_data
+
+            elif name == "codesearch:filename":
+                if self._current_page:
+                    self._current_page.codesearch_filename = self._last_char_data
+
+            elif name == "codesearch:packageurl":
+                if self._current_page:
+                    self._current_page.codesearch_packageurl = self._last_char_data
+
+            elif name == "codesearch:packagemap":
+                if self._current_page:
+                    self._current_page.codesearch_packagemap = self._last_char_data
 
         super().xml_element_end(name=name)
 
@@ -1377,24 +1561,24 @@ class PagesRSSSitemapParser(AbstractXMLSitemapParser):
         ]
 
         def __init__(self):
-            self.link = None
-            self.title = None
-            self.description = None
-            self.publication_date = None
-            self.media_content_url = None
-            self.media_duration = None
-            self.media_thumbnail_url = None
-            self.media_player_url = None
-            self.media_title = None
-            self.media_description = None
-            self.media_rating = None
-            self.media_restriction = None
-            self.media_restriction_relationship = None
-            self.media_keywords = None
-            self.media_category = None
-            self.media_prices = []
-            self.media_credit = None
-            self.dcterms_valid = None
+            self.link: str | None = None
+            self.title: str | None = None
+            self.description: str | None = None
+            self.publication_date: str | None = None
+            self.media_content_url: str | None = None
+            self.media_duration: str | None = None
+            self.media_thumbnail_url: str | None = None
+            self.media_player_url: str | None = None
+            self.media_title: str | None = None
+            self.media_description: str | None = None
+            self.media_rating: str | None = None
+            self.media_restriction: str | None = None
+            self.media_restriction_relationship: str | None = None
+            self.media_keywords: str | None = None
+            self.media_category: str | None = None
+            self.media_prices: list[SitemapVideoPrice] = []
+            self.media_credit: str | None = None
+            self.dcterms_valid: str | None = None
 
         def __hash__(self):
             return hash(
@@ -1419,34 +1603,37 @@ class PagesRSSSitemapParser(AbstractXMLSitemapParser):
                 log.error("Both title and description are unset")
                 return None
 
-            publication_date = html_unescape_strip(self.publication_date)
-            if publication_date:
-                publication_date = parse_rfc2822_date(publication_date)
+            publication_date_raw = html_unescape_strip(self.publication_date)
+            publication_date: datetime.datetime | None = None
+            if publication_date_raw:
+                publication_date = parse_rfc2822_date(publication_date_raw)
+            if publication_date is None:
+                log.error("Publication date is unset")
+                return None
 
-            media_duration = html_unescape_strip(self.media_duration)
-            if media_duration:
+            media_duration_raw = html_unescape_strip(self.media_duration)
+            media_duration: int | None = None
+            if media_duration_raw:
                 try:
-                    media_duration = int(media_duration)
+                    media_duration = int(media_duration_raw)
                 except ValueError:
                     media_duration = None
-            else:
-                media_duration = None
 
-            media_rating = html_unescape_strip(self.media_rating)
-            if media_rating:
+            media_rating_raw = html_unescape_strip(self.media_rating)
+            media_rating: Decimal | str | None = None
+            if media_rating_raw:
                 try:
-                    media_rating = Decimal(media_rating)
+                    media_rating = Decimal(media_rating_raw)
                 except InvalidOperation:
-                    pass
+                    media_rating = media_rating_raw
 
-            media_restriction = html_unescape_strip(self.media_restriction)
-            if media_restriction:
+            media_restriction_raw = html_unescape_strip(self.media_restriction)
+            media_restriction: SitemapVideoRestriction | None = None
+            if media_restriction_raw:
                 media_restriction = (
                     self.media_restriction_relationship,
-                    tuple([x for x in media_restriction.split(" ") if x]),
+                    tuple([x for x in media_restriction_raw.split(" ") if x]),
                 )
-            else:
-                media_restriction = None
 
             media_tags = []
             media_keywords = html_unescape_strip(self.media_keywords)
@@ -1492,10 +1679,13 @@ class PagesRSSSitemapParser(AbstractXMLSitemapParser):
                     )
                 ]
 
+            news_title = title if title is not None else description
+            assert news_title is not None
+
             return SitemapPage(
                 url=link,
                 news_story=SitemapNewsStory(
-                    title=title or description,
+                    title=news_title,
                     publish_date=publication_date,
                 ),
                 videos=sitemap_videos,
@@ -1506,9 +1696,9 @@ class PagesRSSSitemapParser(AbstractXMLSitemapParser):
     def __init__(self, url: str):
         super().__init__(url=url)
 
-        self._current_page = None
-        self._pages = []
-        self._page_links = set()
+        self._current_page: PagesRSSSitemapParser.Page | None = None
+        self._pages: list[PagesRSSSitemapParser.Page] = []
+        self._page_links: set[str] = set()
 
     def xml_element_start(self, name: str, attrs: dict[str, str]) -> None:
         super().xml_element_start(name=name, attrs=attrs)
@@ -1520,23 +1710,23 @@ class PagesRSSSitemapParser(AbstractXMLSitemapParser):
                 )
             self._current_page = self.Page()
         elif self._current_page and name == "media:content":
-            self._current_page.media_content_url = attrs.get("url", None)
-            self._current_page.media_duration = attrs.get("duration", None)
+            self._current_page.media_content_url = attrs.get("url")
+            self._current_page.media_duration = attrs.get("duration")
         elif self._current_page and name == "media:thumbnail":
-            self._current_page.media_thumbnail_url = attrs.get("url", None)
+            self._current_page.media_thumbnail_url = attrs.get("url")
         elif self._current_page and name == "media:player":
-            self._current_page.media_player_url = attrs.get("url", None)
+            self._current_page.media_player_url = attrs.get("url")
         elif self._current_page and name == "media:restriction":
             self._current_page.media_restriction_relationship = attrs.get(
-                "relationship", None
+                "relationship"
             )
         elif self._current_page and name == "media:price":
             self._current_page.media_prices.append(
                 (
                     None,
-                    attrs.get("currency", None),
-                    attrs.get("type", None),
-                    attrs.get("info", None),
+                    attrs.get("currency"),
+                    attrs.get("type"),
+                    attrs.get("info"),
                 )
             )
 
@@ -1550,7 +1740,7 @@ class PagesRSSSitemapParser(AbstractXMLSitemapParser):
         # If within <item> already
         if self._current_page:
             if name == "item":
-                if self._current_page.link not in self._page_links:
+                if self._current_page.link and self._current_page.link not in self._page_links:
                     self._pages.append(self._current_page)
                     self._page_links.add(self._current_page.link)
                 self._current_page = None
@@ -1650,10 +1840,10 @@ class PagesAtomSitemapParser(AbstractXMLSitemapParser):
         ]
 
         def __init__(self):
-            self.link = None
-            self.title = None
-            self.description = None
-            self.publication_date = None
+            self.link: str | None = None
+            self.title: str | None = None
+            self.description: str | None = None
+            self.publication_date: str | None = None
 
         def __hash__(self):
             return hash(
@@ -1678,14 +1868,21 @@ class PagesAtomSitemapParser(AbstractXMLSitemapParser):
                 log.error("Both title and description are unset")
                 return None
 
-            publication_date = html_unescape_strip(self.publication_date)
-            if publication_date:
-                publication_date = parse_iso8601_date(publication_date)
+            publication_date_raw = html_unescape_strip(self.publication_date)
+            publication_date: datetime.datetime | None = None
+            if publication_date_raw:
+                publication_date = parse_iso8601_date(publication_date_raw)
+            if publication_date is None:
+                log.error("Publication date is unset")
+                return None
+
+            news_title = title if title is not None else description
+            assert news_title is not None
 
             return SitemapPage(
                 url=link,
                 news_story=SitemapNewsStory(
-                    title=title or description,
+                    title=news_title,
                     publish_date=publication_date,
                 ),
             )
@@ -1700,10 +1897,10 @@ class PagesAtomSitemapParser(AbstractXMLSitemapParser):
     def __init__(self, url: str):
         super().__init__(url=url)
 
-        self._current_page = None
-        self._pages = []
-        self._page_links = set()
-        self._last_link_rel_self_href = None
+        self._current_page: PagesAtomSitemapParser.Page | None = None
+        self._pages: list[PagesAtomSitemapParser.Page] = []
+        self._page_links: set[str] = set()
+        self._last_link_rel_self_href: str | None = None
 
     def xml_element_start(self, name: str, attrs: dict[str, str]) -> None:
         super().xml_element_start(name=name, attrs=attrs)
@@ -1721,7 +1918,7 @@ class PagesAtomSitemapParser(AbstractXMLSitemapParser):
                     attrs.get("rel", "self").lower() == "self"
                     or self._last_link_rel_self_href is None
                 ):
-                    self._last_link_rel_self_href = attrs.get("href", None)
+                    self._last_link_rel_self_href = attrs.get("href")
 
     def __require_last_char_data_to_be_set(self, name: str) -> None:
         if not self._last_char_data:
@@ -1737,7 +1934,7 @@ class PagesAtomSitemapParser(AbstractXMLSitemapParser):
                     self._current_page.link = self._last_link_rel_self_href
                     self._last_link_rel_self_href = None
 
-                    if self._current_page.link not in self._page_links:
+                    if self._current_page.link and self._current_page.link not in self._page_links:
                         self._pages.append(self._current_page)
                         self._page_links.add(self._current_page.link)
 
@@ -1776,3 +1973,170 @@ class PagesAtomSitemapParser(AbstractXMLSitemapParser):
         pages_sitemap = PagesAtomSitemap(url=self._url, pages=pages)
 
         return pages_sitemap
+
+
+class SemanticWebSitemapParser(AbstractXMLSitemapParser):
+    """
+    Parser for Semantic Web (RDF) sitemaps using the SC (Semantic Crawling) extension.
+    These sitemaps describe RDF datasets and their access methods at the dataset level,
+    not at the individual page level.
+    """
+
+    class Dataset:
+        """Temporary state holder for dataset parsing."""
+
+        __slots__ = [
+            "label",
+            "dataset_uri",
+            "linked_data_prefixes",
+            "sparql_endpoint",
+            "data_dump_locations",
+            "sample_uris",
+            "last_modified",
+            "change_frequency",
+        ]
+
+        def __init__(self):
+            self.label: str | None = None
+            self.dataset_uri: str | None = None
+            self.linked_data_prefixes: list[SitemapSemanticWebLinkedDataPrefix] = []
+            self.sparql_endpoint: SitemapSemanticWebSparqlEndpoint | None = None
+            self.data_dump_locations: list[str] = []
+            self.sample_uris: list[str] = []
+            self.last_modified: str | None = None
+            self.change_frequency: str | None = None
+
+    class Prefix:
+        """Temporary state holder for linked data prefix parsing."""
+
+        __slots__ = ["namespace", "prefix_value", "slice_method_name"]
+
+        def __init__(self):
+            self.namespace: str | None = None
+            self.prefix_value: str | None = None
+            self.slice_method_name: str | None = None
+
+    class Endpoint:
+        """Temporary state holder for SPARQL endpoint parsing."""
+
+        __slots__ = ["location", "graph_name", "slice_method_name"]
+
+        def __init__(self):
+            self.location: str | None = None
+            self.graph_name: str | None = None
+            self.slice_method_name: str | None = None
+
+    def __init__(self, url: str):
+        super().__init__(url=url)
+        self._current_dataset: SemanticWebSitemapParser.Dataset | None = self.Dataset()
+        self._current_prefix: SemanticWebSitemapParser.Prefix | None = None
+        self._current_endpoint: SemanticWebSitemapParser.Endpoint | None = None
+        self._datasets: list[SitemapSemanticWebDataset] = []
+
+    def xml_element_start(self, name: str, attrs: dict[str, str]) -> None:
+        super().xml_element_start(name=name, attrs=attrs)
+        self._last_char_data = ""
+
+        if name == "sc:dataset":
+            if self._current_dataset:
+                raise SitemapXMLParsingException(
+                    "Dataset is expected to be unset by <sc:dataset>."
+                )
+            self._current_dataset = self.Dataset()
+
+        elif name == "sc:linkedDataPrefix" and self._current_dataset:
+            if self._current_prefix:
+                raise SitemapXMLParsingException(
+                    "Prefix is expected to be unset by <sc:linkedDataPrefix>."
+                )
+            self._current_prefix = self.Prefix()
+            # Check for optional slicing method
+            if "sliceMethod" in attrs:
+                self._current_prefix.slice_method_name = attrs["sliceMethod"]
+
+        elif name == "sc:sparqlEndpointLocation" and self._current_dataset:
+            if self._current_endpoint:
+                raise SitemapXMLParsingException(
+                    "Endpoint is expected to be unset by <sc:sparqlEndpointLocation>."
+                )
+            self._current_endpoint = self.Endpoint()
+            # Check for optional slicing method
+            if "sliceMethod" in attrs:
+                self._current_endpoint.slice_method_name = attrs["sliceMethod"]
+
+    def xml_element_end(self, name: str) -> None:
+        if self._current_dataset:
+            if name == "sc:dataset":
+                # Build the final SitemapSemanticWebDataset object
+                dataset = SitemapSemanticWebDataset(
+                    label=self._current_dataset.label,
+                    dataset_uri=self._current_dataset.dataset_uri,
+                    linked_data_prefixes=self._current_dataset.linked_data_prefixes,
+                    sparql_endpoint=self._current_dataset.sparql_endpoint,
+                    data_dump_locations=self._current_dataset.data_dump_locations,
+                    sample_uris=self._current_dataset.sample_uris,
+                    last_modified=self._current_dataset.last_modified,
+                    change_frequency=self._current_dataset.change_frequency,
+                )
+                self._datasets.append(dataset)
+                self._current_dataset = None
+
+            elif name == "sc:datasetLabel":
+                self._current_dataset.label = self._last_char_data
+
+            elif name == "sc:datasetURI":
+                self._current_dataset.dataset_uri = self._last_char_data
+
+            elif name == "sc:linkedDataPrefix":
+                if self._current_prefix:
+                    prefix = SitemapSemanticWebLinkedDataPrefix(
+                        namespace=self._current_prefix.namespace,
+                        prefix_value=self._current_prefix.prefix_value,
+                        slice_method=self._current_prefix.slice_method_name,
+                    )
+                    self._current_dataset.linked_data_prefixes.append(prefix)
+                    self._current_prefix = None
+
+            elif self._current_prefix:
+                if name == "sc:namespace":
+                    self._current_prefix.namespace = self._last_char_data
+                elif name == "sc:prefix":
+                    self._current_prefix.prefix_value = self._last_char_data
+
+            elif name == "sc:sparqlEndpointLocation":
+                if self._current_endpoint:
+                    endpoint = SitemapSemanticWebSparqlEndpoint(
+                        location=self._current_endpoint.location,
+                        graph_name=self._current_endpoint.graph_name,
+                        slice_method=self._current_endpoint.slice_method_name,
+                    )
+                    self._current_dataset.sparql_endpoint = endpoint
+                    self._current_endpoint = None
+
+            elif self._current_endpoint:
+                if name == "sc:endpointURI":
+                    self._current_endpoint.location = self._last_char_data
+                elif name == "sc:sparqlGraphName":
+                    self._current_endpoint.graph_name = self._last_char_data
+
+            elif name == "sc:dataDumpLocation":
+                if self._last_char_data:
+                    self._current_dataset.data_dump_locations.append(self._last_char_data)
+
+            elif name == "sc:sampleURI":
+                if self._last_char_data:
+                    self._current_dataset.sample_uris.append(self._last_char_data)
+
+            elif name == "lastmod":
+                self._current_dataset.last_modified = self._last_char_data
+
+            elif name == "changefreq":
+                self._current_dataset.change_frequency = self._last_char_data
+
+        super().xml_element_end(name=name)
+
+    def xml_char_data(self, data: str) -> None:
+        super().xml_char_data(data=data)
+
+    def sitemap(self) -> AbstractSitemap:
+        return SemanticWebSitemap(url=self._url, datasets=self._datasets)

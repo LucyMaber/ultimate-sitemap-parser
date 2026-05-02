@@ -3,7 +3,17 @@ from decimal import Decimal
 from unittest import mock
 
 from tests.tree.base import TreeTestBase
-from usp.objects.page import SitemapImage, SitemapPage, SitemapVideo
+from usp.objects.page import (
+    SitemapImage,
+    SitemapPage,
+    SitemapVideo,
+    SitemapMobile,
+    SitemapGeo,
+    SitemapPageMap,
+    SitemapPageMapAttribute,
+    SitemapPageMapDataObject,
+    SitemapCodeSearch,
+)
 from usp.objects.sitemap import (
     IndexRobotsTxtSitemap,
     IndexWebsiteSitemap,
@@ -454,3 +464,327 @@ class TestXMLHrefLang(TreeTestBase):
         assert pages[1].alternates is None
         assert pages[2].alternates is None
         assert pages[3].alternates is None
+
+    def test_xml_mobile(self, requests_mock):
+        requests_mock.add_matcher(TreeTestBase.fallback_to_404_not_found_matcher)
+
+        requests_mock.get(
+            self.TEST_BASE_URL + "/robots.txt",
+            headers={"Content-Type": "text/plain"},
+            text=textwrap.dedent(
+                f"""
+                User-agent: *
+                Disallow: /whatever
+
+                Sitemap: {self.TEST_BASE_URL}/sitemap_mobile.xml
+            """
+            ).strip(),
+        )
+
+        requests_mock.get(
+            self.TEST_BASE_URL + "/sitemap_mobile.xml",
+            headers={"Content-Type": "text/xml"},
+            text=textwrap.dedent(
+                f"""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <urlset
+                  xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+                  xmlns:mobile="http://www.baidu.com/schemas/sitemap-mobile/1/">
+                  <url>
+                    <loc>http://m.abc.com/index.html</loc>
+                    <mobile:mobile type="mobile"/>
+                    <lastmod>2009-12-14</lastmod>
+                    <changefreq>daily</changefreq>
+                    <priority>0.8</priority>
+                  </url>
+                </urlset>
+                """
+            ).strip(),
+        )
+
+        tree = sitemap_tree_for_homepage(self.TEST_BASE_URL)
+
+        pages = list(tree.all_pages())
+        assert len(pages) == 1
+        assert pages[0].url == "http://m.abc.com/index.html"
+        assert pages[0].mobile == SitemapMobile(type="mobile")
+
+    def test_xml_geo(self, requests_mock):
+        requests_mock.add_matcher(TreeTestBase.fallback_to_404_not_found_matcher)
+
+        requests_mock.get(
+            self.TEST_BASE_URL + "/robots.txt",
+            headers={"Content-Type": "text/plain"},
+            text=textwrap.dedent(
+                f"""
+                User-agent: *
+                Disallow: /whatever
+
+                Sitemap: {self.TEST_BASE_URL}/sitemap_geo.xml
+            """
+            ).strip(),
+        )
+
+        requests_mock.get(
+            self.TEST_BASE_URL + "/sitemap_geo.xml",
+            headers={"Content-Type": "text/xml"},
+            text=textwrap.dedent(
+                f"""
+                <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+                        xmlns:geo="http://www.google.com/geo/schemas/sitemap/1.0">
+                  <url>
+                    <loc>https://www.example.com/locations.kml</loc>
+                    <geo:geo>
+                      <geo:format>kml</geo:format>
+                    </geo:geo>
+                  </url>
+                </urlset>
+                """
+            ).strip(),
+        )
+
+        tree = sitemap_tree_for_homepage(self.TEST_BASE_URL)
+
+        pages = list(tree.all_pages())
+        assert len(pages) == 1
+        assert pages[0].url == "https://www.example.com/locations.kml"
+        assert pages[0].geo == SitemapGeo(format="kml")
+
+    def test_xml_pagemap(self, requests_mock):
+        requests_mock.add_matcher(TreeTestBase.fallback_to_404_not_found_matcher)
+
+        requests_mock.get(
+            self.TEST_BASE_URL + "/robots.txt",
+            headers={"Content-Type": "text/plain"},
+            text=textwrap.dedent(
+                f"""
+                User-agent: *
+                Disallow: /whatever
+
+                Sitemap: {self.TEST_BASE_URL}/sitemap_pagemap.xml
+            """
+            ).strip(),
+        )
+
+        requests_mock.get(
+            self.TEST_BASE_URL + "/sitemap_pagemap.xml",
+            headers={"Content-Type": "text/xml"},
+            text=textwrap.dedent(
+                f"""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+                  <url>
+                    <loc>{self.TEST_BASE_URL}/foo</loc>
+                    <PageMap xmlns="http://www.google.com/schemas/sitemap-pagemap/1.0">
+                      <DataObject type="document" id="hibachi">
+                        <Attribute name="name">Dragon</Attribute>
+                        <Attribute name="review">3.5</Attribute>
+                      </DataObject>
+                    </PageMap>
+                  </url>
+                </urlset>
+                """
+            ).strip(),
+        )
+
+        tree = sitemap_tree_for_homepage(self.TEST_BASE_URL)
+
+        pages = list(tree.all_pages())
+        assert len(pages) == 1
+        assert pages[0].url == f"{self.TEST_BASE_URL}/foo"
+        assert pages[0].page_map == SitemapPageMap(
+            data_objects=[
+                SitemapPageMapDataObject(
+                    type="document",
+                    id="hibachi",
+                    attributes=[
+                        SitemapPageMapAttribute(name="name", value="Dragon"),
+                        SitemapPageMapAttribute(name="review", value="3.5"),
+                    ],
+                )
+            ]
+        )
+
+    def test_xml_codesearch(self, requests_mock):
+        requests_mock.add_matcher(TreeTestBase.fallback_to_404_not_found_matcher)
+
+        requests_mock.get(
+            self.TEST_BASE_URL + "/robots.txt",
+            headers={"Content-Type": "text/plain"},
+            text=textwrap.dedent(
+                f"""
+                User-agent: *
+                Disallow: /whatever
+
+                Sitemap: {self.TEST_BASE_URL}/sitemap_codesearch.xml
+            """
+            ).strip(),
+        )
+
+        requests_mock.get(
+            self.TEST_BASE_URL + "/sitemap_codesearch.xml",
+            headers={"Content-Type": "text/xml"},
+            text=textwrap.dedent(
+                f"""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+                        xmlns:codesearch="http://www.google.com/codesearch/schemas/sitemap/1.0">
+                  <url>
+                    <loc>http://mysite.org/download/myfile.c</loc>
+                    <codesearch:codesearch>
+                      <codesearch:filetype>C</codesearch:filetype>
+                      <codesearch:license>LGPL</codesearch:license>
+                    </codesearch:codesearch>
+                  </url>
+                  <url>
+                    <loc>http://mysite.org/download/myproject.tgz</loc>
+                    <codesearch:codesearch>
+                      <codesearch:filetype>archive</codesearch:filetype>
+                      <codesearch:license>Apache</codesearch:license>
+                      <codesearch:packagemap>packagemap.xml</codesearch:packagemap>
+                    </codesearch:codesearch>
+                  </url>
+                </urlset>
+                """
+            ).strip(),
+        )
+
+        tree = sitemap_tree_for_homepage(self.TEST_BASE_URL)
+
+        pages = list(tree.all_pages())
+        assert len(pages) == 2
+        assert pages[0].url == "http://mysite.org/download/myfile.c"
+        assert pages[0].code_search == SitemapCodeSearch(filetype="C", license="LGPL")
+        assert pages[1].url == "http://mysite.org/download/myproject.tgz"
+        assert pages[1].code_search == SitemapCodeSearch(
+            filetype="archive", license="Apache", packagemap="packagemap.xml"
+        )
+
+    def test_xml_handheld(self, requests_mock):
+        requests_mock.add_matcher(TreeTestBase.fallback_to_404_not_found_matcher)
+
+        requests_mock.get(
+            self.TEST_BASE_URL + "/robots.txt",
+            headers={"Content-Type": "text/plain"},
+            text=textwrap.dedent(
+                f"""
+                User-agent: *
+                Disallow: /whatever
+
+                Sitemap: {self.TEST_BASE_URL}/sitemap_handheld.xml
+            """
+            ).strip(),
+        )
+
+        requests_mock.get(
+            self.TEST_BASE_URL + "/sitemap_handheld.xml",
+            headers={"Content-Type": "text/xml"},
+            text=textwrap.dedent(
+                f"""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+                        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+                  <url>
+                    <loc>{self.TEST_BASE_URL}/page</loc>
+                    <xhtml:link rel="alternate" media="handheld" href="{self.TEST_BASE_URL}/page"/>
+                  </url>
+                </urlset>
+                """
+            ).strip(),
+        )
+
+        tree = sitemap_tree_for_homepage(self.TEST_BASE_URL)
+
+        pages = list(tree.all_pages())
+        assert len(pages) == 1
+        assert pages[0].url == f"{self.TEST_BASE_URL}/page"
+        assert pages[0].handheld == f"{self.TEST_BASE_URL}/page"
+
+    def test_xml_semantic_web(self, requests_mock):
+        """Test Semantic Web (RDF) sitemap parsing."""
+        from usp.objects.sitemap import SemanticWebSitemap
+        from usp.fetch_parse import XMLSitemapParser
+        from usp.web_client.requests_client import RequestsWebClient
+        
+        # We'll test the parser directly using XMLSitemapParser
+        # Set up minimal mocking
+        requests_mock.add_matcher(TreeTestBase.fallback_to_404_not_found_matcher)
+        
+        xml_content = textwrap.dedent("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <sc:dataset
+                xmlns:sc="http://sw.deri.org/2007/07/sitemapextension/scschema.xsd"
+                xmlns:void="http://rdfs.org/ns/void#">
+              <sc:datasetLabel>Example RDF Dataset</sc:datasetLabel>
+              <sc:datasetURI>http://example.org/dataset</sc:datasetURI>
+              <sc:linkedDataPrefix sliceMethod="URI">
+                <sc:namespace>http://example.org/vocab/</sc:namespace>
+                <sc:prefix>ex</sc:prefix>
+              </sc:linkedDataPrefix>
+              <sc:linkedDataPrefix sliceMethod="Regex">
+                <sc:namespace>http://example.org/resource/</sc:namespace>
+                <sc:prefix>exres</sc:prefix>
+              </sc:linkedDataPrefix>
+              <sc:sparqlEndpointLocation sliceMethod="None">
+                <sc:endpointURI>http://example.org/sparql</sc:endpointURI>
+                <sc:sparqlGraphName>http://example.org/graph</sc:sparqlGraphName>
+              </sc:sparqlEndpointLocation>
+              <sc:dataDumpLocation>http://example.org/data/dataset.nt</sc:dataDumpLocation>
+              <sc:dataDumpLocation>http://example.org/data/dataset.ttl</sc:dataDumpLocation>
+              <sc:sampleURI>http://example.org/resource/sample1</sc:sampleURI>
+              <sc:sampleURI>http://example.org/resource/sample2</sc:sampleURI>
+              <lastmod>2024-01-15T12:30:00Z</lastmod>
+              <changefreq>monthly</changefreq>
+            </sc:dataset>
+        """).strip()
+        
+        # Create parser and parse
+        sitemap_parser = XMLSitemapParser(
+            url="http://example.org/dataset.xml",
+            content=xml_content,
+            recursion_level=0,
+            web_client=RequestsWebClient(),
+            parent_urls=set(),
+            recurse_callback=None,
+            recurse_list_callback=None,
+        )
+        
+        sitemap = sitemap_parser.sitemap()
+        
+        # Verify it's a SemanticWebSitemap
+        assert isinstance(sitemap, SemanticWebSitemap)
+        
+        # Verify datasets
+        assert len(sitemap.datasets) == 1
+        dataset = sitemap.datasets[0]
+        
+        # Verify dataset metadata
+        assert dataset.label == "Example RDF Dataset"
+        assert dataset.dataset_uri == "http://example.org/dataset"
+        assert dataset.last_modified == "2024-01-15T12:30:00Z"
+        assert dataset.change_frequency == "monthly"
+        
+        # Verify linked data prefixes
+        assert len(dataset.linked_data_prefixes) == 2
+        assert dataset.linked_data_prefixes[0].namespace == "http://example.org/vocab/"
+        assert dataset.linked_data_prefixes[0].prefix_value == "ex"
+        assert dataset.linked_data_prefixes[0].slice_method == "URI"
+        assert dataset.linked_data_prefixes[1].namespace == "http://example.org/resource/"
+        assert dataset.linked_data_prefixes[1].prefix_value == "exres"
+        assert dataset.linked_data_prefixes[1].slice_method == "Regex"
+        
+        # Verify SPARQL endpoint
+        assert dataset.sparql_endpoint is not None
+        assert dataset.sparql_endpoint.location == "http://example.org/sparql"
+        assert dataset.sparql_endpoint.graph_name == "http://example.org/graph"
+        assert dataset.sparql_endpoint.slice_method == "None"
+        
+        # Verify data dumps
+        assert len(dataset.data_dump_locations) == 2
+        assert "http://example.org/data/dataset.nt" in dataset.data_dump_locations
+        assert "http://example.org/data/dataset.ttl" in dataset.data_dump_locations
+        
+        # Verify samples
+        assert len(dataset.sample_uris) == 2
+        assert "http://example.org/resource/sample1" in dataset.sample_uris
+        assert "http://example.org/resource/sample2" in dataset.sample_uris

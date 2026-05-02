@@ -641,7 +641,7 @@ class SitemapVideo:
 
     @property
     def dcterms_valid(self) -> str | None:
-        """Get the raw dcterms:valid value from Media RSS."""
+        """Return dcterms:valid for Yahoo Media RSS."""
         return self.__dcterms_valid
 
 
@@ -675,6 +675,11 @@ class SitemapPage:
         "__images",
         "__videos",
         "__alternates",
+        "__mobile",
+        "__geo",
+        "__handheld",
+        "__page_map",
+        "__code_search",
     ]
 
     def __init__(
@@ -687,18 +692,28 @@ class SitemapPage:
         images: list[SitemapImage] | None = None,
         videos: list[SitemapVideo] | None = None,
         alternates: list[tuple[str, str]] | None = None,
+        mobile: "SitemapMobile | None" = None,
+        geo: "SitemapGeo | None" = None,
+        handheld: str | None = None,
+        page_map: "SitemapPageMap | None" = None,
+        code_search: "SitemapCodeSearch | None" = None,
     ):
         """
-        Initialize a new sitemap-derived page.
+        Initialize new page.
 
         :param url: Page URL.
-        :param priority: Priority of this URL relative to other URLs on your site.
-        :param last_modified: Date of last modification of the URL.
-        :param change_frequency: Change frequency of a sitemap URL.
-        :param news_story: Google News story attached to the URL.
-        :param images: Google Image sitemap images attached to the URL.
-        :param videos: Google Video sitemap or Media RSS videos attached to the URL.
-        :param alternates: Alternate language URLs attached to the URL.
+        :param priority: Page priority (0.0 to 1.0).
+        :param last_modified: Page's last modification date.
+        :param change_frequency: How frequently the page is likely to change.
+        :param news_story: Google News story.
+        :param images: List of Google Image images.
+        :param videos: List of Google Video videos.
+        :param alternates: List of alternate versions of this page.
+        :param mobile: Baidu Mobile info.
+        :param geo: Google Geo info.
+        :param handheld: URL of the handheld/feature-phone alternate version of this page.
+        :param page_map: Google PageMap data.
+        :param code_search: Google Code Search metadata.
         """
         self.__url = url
         self.__priority = priority
@@ -708,8 +723,14 @@ class SitemapPage:
         self.__images = images
         self.__videos = videos
         self.__alternates = alternates
+        self.__mobile = mobile
+        self.__geo = geo
+        self.__handheld = handheld
+        self.__page_map = page_map
+        self.__code_search = code_search
 
     def __eq__(self, other) -> bool:
+        """Check equality."""
         if not isinstance(other, SitemapPage):
             raise NotImplementedError
 
@@ -736,6 +757,16 @@ class SitemapPage:
 
         if self.alternates != other.alternates:
             return False
+        if self.mobile != other.mobile:
+            return False
+        if self.geo != other.geo:
+            return False
+        if self.handheld != other.handheld:
+            return False
+        if self.page_map != other.page_map:
+            return False
+        if self.code_search != other.code_search:
+            return False
 
         return True
 
@@ -757,7 +788,12 @@ class SitemapPage:
             f"news_story={self.news_story}, "
             f"images={self.images}, "
             f"videos={self.videos}, "
-            f"alternates={self.alternates}"
+            f"alternates={self.alternates}, "
+            f"mobile={self.mobile}, "
+            f"geo={self.geo}, "
+            f"handheld={self.handheld}, "
+            f"page_map={self.page_map}, "
+            f"code_search={self.code_search}"
             ")"
         )
 
@@ -766,7 +802,7 @@ class SitemapPage:
         Convert this page to a dictionary.
         """
 
-        return {
+        obj = {
             "url": self.url,
             "priority": self.priority,
             "last_modified": self.last_modified,
@@ -782,6 +818,26 @@ class SitemapPage:
             else None,
             "alternates": self.alternates,
         }
+
+        if self.alternates:
+            obj["alternates"] = self.alternates
+
+        if self.mobile:
+            obj["mobile"] = self.mobile.to_dict()
+
+        if self.geo:
+            obj["geo"] = self.geo.to_dict()
+
+        if self.handheld:
+            obj["handheld"] = self.handheld
+
+        if self.page_map:
+            obj["page_map"] = self.page_map.to_dict()
+
+        if self.code_search:
+            obj["code_search"] = self.code_search.to_dict()
+
+        return obj
 
     @property
     def url(self) -> str:
@@ -828,15 +884,590 @@ class SitemapPage:
         return self.__videos
 
     @property
-    def alternates(self) -> list[tuple[str, str]] | None:
-        """Get the alternate URLs for the URL.
-
-        A tuple of (language code, URL) for each ``<xhtml:link>`` element with ``rel="alternate"`` attribute.
-
-        See :ref:`sitemap-extra-localisation` reference
-
-        Example::
-
-            [('fr', 'https://www.example.com/fr/page'), ('de', 'https://www.example.com/de/page')]
+    def alternates(self) -> "list[tuple[str, str]] | None":
+        """
+        Return a list of alternate versions of this page.
+        :return: A list of alternate versions of this page.
         """
         return self.__alternates
+
+    @property
+    def mobile(self) -> "SitemapMobile | None":
+        """
+        Return Baidu Mobile sitemap info.
+        :return: Baidu Mobile sitemap info.
+        """
+        return self.__mobile
+
+    @property
+    def geo(self) -> "SitemapGeo | None":
+        """
+        Return Google Geo sitemap info.
+        :return: Google Geo sitemap info.
+        """
+        return self.__geo
+
+    @property
+    def handheld(self) -> str | None:
+        """
+        Return the URL of the handheld/feature-phone alternate version of this page.
+        :return: Handheld alternate URL, or None.
+        """
+        return self.__handheld
+
+    @property
+    def page_map(self) -> "SitemapPageMap | None":
+        """
+        Return Google PageMap data.
+        :return: Google PageMap data, or None.
+        """
+        return self.__page_map
+
+    @property
+    def code_search(self) -> "SitemapCodeSearch | None":
+        """
+        Return Google Code Search metadata.
+        :return: Google Code Search metadata, or None.
+        """
+        return self.__code_search
+
+
+class SitemapMobile:
+    """Mobile-friendliness of a page, derived from Baidu Mobile XML sitemap."""
+
+    __slots__ = ["__type"]
+
+    def __init__(self, type: str | None = None):
+        """
+        :param type: The type of mobile page.
+        """
+        self.__type = type
+
+    def __eq__(self, other) -> bool:
+        """Check equality."""
+        if not isinstance(other, SitemapMobile):
+            return False
+
+        if self.type != other.type:
+            return False
+
+        return True
+
+    def to_dict(self) -> dict:
+        """
+        Return a dictionary representation of the mobile info.
+        :return: Dictionary representation of the mobile info.
+        """
+        return {
+            "type": self.type,
+        }
+
+    def __hash__(self):
+        return hash((self.type,))
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(type={self.type})"
+
+    @property
+    def type(self) -> str | None:
+        """The type of mobile page."""
+        return self.__type
+
+
+class SitemapGeo:
+    """Geo-friendliness of a page, derived from Google Geo XML sitemap."""
+
+    __slots__ = ["__format"]
+
+    def __init__(self, format: str | None = None):
+        """
+        :param format: The format of the geo file.
+        """
+        self.__format = format
+
+    def __eq__(self, other) -> bool:
+        """Check equality."""
+        if not isinstance(other, SitemapGeo):
+            return False
+
+        if self.format != other.format:
+            return False
+
+        return True
+
+    def to_dict(self) -> dict:
+        """
+        Return a dictionary representation of the geo info.
+        :return: Dictionary representation of the geo info.
+        """
+        return {
+            "format": self.format,
+        }
+
+    def __hash__(self):
+        return hash((self.format,))
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(format={self.format})"
+
+    @property
+    def format(self) -> str | None:
+        """The format of the geo file."""
+        return self.__format
+
+
+class SitemapPageMapAttribute:
+    """Single attribute within a PageMap DataObject, from Google PageMap sitemap extension."""
+
+    __slots__ = ["__name", "__value"]
+
+    def __init__(self, name: str, value: str):
+        """
+        :param name: Attribute name.
+        :param value: Attribute value.
+        """
+        self.__name = name
+        self.__value = value
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, SitemapPageMapAttribute):
+            return False
+        return self.name == other.name and self.value == other.value
+
+    def __hash__(self):
+        return hash((self.name, self.value))
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(name={self.name}, value={self.value})"
+
+    def to_dict(self) -> dict:
+        return {"name": self.name, "value": self.value}
+
+    @property
+    def name(self) -> str:
+        """Attribute name."""
+        return self.__name
+
+    @property
+    def value(self) -> str:
+        """Attribute value."""
+        return self.__value
+
+
+class SitemapPageMapDataObject:
+    """DataObject within a PageMap, from Google PageMap sitemap extension."""
+
+    __slots__ = ["__type", "__id", "__attributes"]
+
+    def __init__(
+        self,
+        type: str | None = None,
+        id: str | None = None,
+        attributes: list[SitemapPageMapAttribute] | None = None,
+    ):
+        """
+        :param type: DataObject type (e.g. "document").
+        :param id: DataObject identifier.
+        :param attributes: List of attributes.
+        """
+        self.__type = type
+        self.__id = id
+        self.__attributes = attributes if attributes is not None else []
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, SitemapPageMapDataObject):
+            return False
+        return self.type == other.type and self.id == other.id and self.attributes == other.attributes
+
+    def __hash__(self):
+        return hash((self.type, self.id, tuple(self.attributes)))
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"type={self.type}, id={self.id}, attributes={self.attributes})"
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "type": self.type,
+            "id": self.id,
+            "attributes": [attr.to_dict() for attr in self.attributes],
+        }
+
+    @property
+    def type(self) -> str | None:
+        """DataObject type."""
+        return self.__type
+
+    @property
+    def id(self) -> str | None:
+        """DataObject identifier."""
+        return self.__id
+
+    @property
+    def attributes(self) -> list[SitemapPageMapAttribute]:
+        """DataObject attributes."""
+        return self.__attributes
+
+
+class SitemapPageMap:
+    """PageMap data for a URL, from Google PageMap sitemap extension."""
+
+    __slots__ = ["__data_objects"]
+
+    def __init__(self, data_objects: list[SitemapPageMapDataObject] | None = None):
+        """
+        :param data_objects: List of DataObjects.
+        """
+        self.__data_objects = data_objects if data_objects is not None else []
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, SitemapPageMap):
+            return False
+        return self.data_objects == other.data_objects
+
+    def __hash__(self):
+        return hash(tuple(self.data_objects))
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(data_objects={self.data_objects})"
+
+    def to_dict(self) -> dict:
+        return {"data_objects": [obj.to_dict() for obj in self.data_objects]}
+
+    @property
+    def data_objects(self) -> list[SitemapPageMapDataObject]:
+        """PageMap data objects."""
+        return self.__data_objects
+
+
+class SitemapCodeSearch:
+    """Code Search metadata for a URL, from Google Code Search sitemap extension."""
+
+    __slots__ = ["__filetype", "__license", "__filename", "__packageurl", "__packagemap"]
+
+    def __init__(
+        self,
+        filetype: str | None = None,
+        license: str | None = None,
+        filename: str | None = None,
+        packageurl: str | None = None,
+        packagemap: str | None = None,
+    ):
+        """
+        :param filetype: Source code language (e.g. "C", "Python") or "archive".
+        :param license: Software license short name (e.g. "GPL", "BSD").
+        :param filename: Actual file name if the URL does not reveal it.
+        :param packageurl: URL of the top-level package directory.
+        :param packagemap: Name of the packagemap file inside the archive.
+        """
+        self.__filetype = filetype
+        self.__license = license
+        self.__filename = filename
+        self.__packageurl = packageurl
+        self.__packagemap = packagemap
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, SitemapCodeSearch):
+            return False
+        return (
+            self.filetype == other.filetype
+            and self.license == other.license
+            and self.filename == other.filename
+            and self.packageurl == other.packageurl
+            and self.packagemap == other.packagemap
+        )
+
+    def __hash__(self):
+        return hash((self.filetype, self.license, self.filename, self.packageurl, self.packagemap))
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"filetype={self.filetype}, "
+            f"license={self.license}, "
+            f"filename={self.filename}, "
+            f"packageurl={self.packageurl}, "
+            f"packagemap={self.packagemap})"
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "filetype": self.filetype,
+            "license": self.license,
+            "filename": self.filename,
+            "packageurl": self.packageurl,
+            "packagemap": self.packagemap,
+        }
+
+    @property
+    def filetype(self) -> str | None:
+        """Source code language or \"archive\"."""
+        return self.__filetype
+
+    @property
+    def license(self) -> str | None:
+        """Software license short name."""
+        return self.__license
+
+    @property
+    def filename(self) -> str | None:
+        """Actual file name."""
+        return self.__filename
+
+    @property
+    def packageurl(self) -> str | None:
+        """URL of the top-level package directory."""
+        return self.__packageurl
+
+    @property
+    def packagemap(self) -> str | None:
+        """Name of the packagemap file inside the archive."""
+        return self.__packagemap
+
+
+class SitemapSemanticWebLinkedDataPrefix:
+    """Linked Data prefix for Semantic Web crawling extension."""
+
+    __slots__ = ["__namespace", "__prefix_value", "__slice_method"]
+
+    def __init__(self, namespace: str, prefix_value: str, slice_method: str | None = None):
+        """
+        :param namespace: Namespace URI for the linked data prefix.
+        :param prefix_value: Short prefix identifier for the namespace.
+        :param slice_method: Slicing method: "URI", "Regex", or "None".
+        """
+        self.__namespace = namespace
+        self.__prefix_value = prefix_value
+        self.__slice_method = slice_method
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, SitemapSemanticWebLinkedDataPrefix):
+            return False
+        return (
+            self.namespace == other.namespace
+            and self.prefix_value == other.prefix_value
+            and self.slice_method == other.slice_method
+        )
+
+    def __hash__(self):
+        return hash((self.namespace, self.prefix_value, self.slice_method))
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(namespace={self.namespace}, prefix_value={self.prefix_value}, slice_method={self.slice_method})"
+
+    def to_dict(self) -> dict:
+        return {
+            "namespace": self.namespace,
+            "prefix_value": self.prefix_value,
+            "slice_method": self.slice_method,
+        }
+
+    @property
+    def namespace(self) -> str:
+        """Namespace URI for the linked data prefix."""
+        return self.__namespace
+
+    @property
+    def prefix_value(self) -> str:
+        """Short prefix identifier for the namespace."""
+        return self.__prefix_value
+
+    @property
+    def slice_method(self) -> str | None:
+        """Slicing method used for descriptions."""
+        return self.__slice_method
+
+
+class SitemapSemanticWebSparqlEndpoint:
+    """SPARQL endpoint for Semantic Web crawling extension."""
+
+    __slots__ = ["__location", "__slice_method", "__graph_name"]
+
+    def __init__(self, location: str, graph_name: str | None = None, slice_method: str | None = None):
+        """
+        :param location: SPARQL endpoint URL.
+        :param graph_name: Named graph URI, or "*" for all graphs.
+        :param slice_method: Slicing method: "URI", "Regex", or "None".
+        """
+        self.__location = location
+        self.__slice_method = slice_method
+        self.__graph_name = graph_name
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, SitemapSemanticWebSparqlEndpoint):
+            return False
+        return (
+            self.location == other.location
+            and self.slice_method == other.slice_method
+            and self.graph_name == other.graph_name
+        )
+
+    def __hash__(self):
+        return hash((self.location, self.slice_method, self.graph_name))
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"location={self.location}, graph_name={self.graph_name}, slice_method={self.slice_method})"
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "location": self.location,
+            "graph_name": self.graph_name,
+            "slice_method": self.slice_method,
+        }
+
+    @property
+    def location(self) -> str:
+        """SPARQL endpoint URL."""
+        return self.__location
+
+    @property
+    def slice_method(self) -> str | None:
+        """Slicing method used for DESCRIBE queries."""
+        return self.__slice_method
+
+    @property
+    def graph_name(self) -> str | None:
+        """Named graph URI in the endpoint."""
+        return self.__graph_name
+
+
+class SitemapSemanticWebDataset:
+    """RDF dataset from Semantic Web crawling sitemap extension."""
+
+    __slots__ = [
+        "__label",
+        "__dataset_uri",
+        "__linked_data_prefixes",
+        "__sparql_endpoint",
+        "__data_dump_locations",
+        "__sample_uris",
+        "__last_modified",
+        "__change_frequency",
+    ]
+
+    def __init__(
+        self,
+        label: str | None = None,
+        dataset_uri: str | None = None,
+        linked_data_prefixes: list[SitemapSemanticWebLinkedDataPrefix] | None = None,
+        sparql_endpoint: SitemapSemanticWebSparqlEndpoint | None = None,
+        data_dump_locations: list[str] | None = None,
+        sample_uris: list[str] | None = None,
+        last_modified: datetime.datetime | None = None,
+        change_frequency: str | None = None,
+    ):
+        """
+        :param label: Human-readable dataset name.
+        :param dataset_uri: URI identifying the dataset.
+        :param linked_data_prefixes: List of Linked Data URI prefixes.
+        :param sparql_endpoint: SPARQL endpoint for the dataset.
+        :param data_dump_locations: List of RDF dump file URLs.
+        :param sample_uris: List of sample URIs in the dataset.
+        :param last_modified: Last modification date of the dataset.
+        :param change_frequency: Expected update frequency (always, hourly, daily, weekly, monthly, yearly, never).
+        """
+        self.__label = label
+        self.__dataset_uri = dataset_uri
+        self.__linked_data_prefixes = linked_data_prefixes if linked_data_prefixes is not None else []
+        self.__sparql_endpoint = sparql_endpoint
+        self.__data_dump_locations = data_dump_locations if data_dump_locations is not None else []
+        self.__sample_uris = sample_uris if sample_uris is not None else []
+        self.__last_modified = last_modified
+        self.__change_frequency = change_frequency
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, SitemapSemanticWebDataset):
+            return False
+        return (
+            self.label == other.label
+            and self.dataset_uri == other.dataset_uri
+            and self.linked_data_prefixes == other.linked_data_prefixes
+            and self.sparql_endpoint == other.sparql_endpoint
+            and self.data_dump_locations == other.data_dump_locations
+            and self.sample_uris == other.sample_uris
+            and self.last_modified == other.last_modified
+            and self.change_frequency == other.change_frequency
+        )
+
+    def __hash__(self):
+        return hash(
+            (
+                self.label,
+                self.dataset_uri,
+                tuple(self.linked_data_prefixes),
+                self.sparql_endpoint,
+                tuple(self.data_dump_locations),
+                tuple(self.sample_uris),
+                self.last_modified,
+                self.change_frequency,
+            )
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"label={self.label}, dataset_uri={self.dataset_uri}, "
+            f"linked_data_prefixes={self.linked_data_prefixes}, "
+            f"sparql_endpoint={self.sparql_endpoint}, "
+            f"data_dump_locations={self.data_dump_locations}, "
+            f"sample_uris={self.sample_uris}, "
+            f"last_modified={self.last_modified}, "
+            f"change_frequency={self.change_frequency})"
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "label": self.label,
+            "dataset_uri": self.dataset_uri,
+            "linked_data_prefixes": [p.to_dict() for p in self.linked_data_prefixes],
+            "sparql_endpoint": self.sparql_endpoint.to_dict() if self.sparql_endpoint else None,
+            "data_dump_locations": self.data_dump_locations,
+            "sample_uris": self.sample_uris,
+            "last_modified": self.last_modified,
+            "change_frequency": self.change_frequency,
+        }
+
+    @property
+    def label(self) -> str | None:
+        """Human-readable dataset name."""
+        return self.__label
+
+    @property
+    def dataset_uri(self) -> str | None:
+        """URI identifying the dataset."""
+        return self.__dataset_uri
+
+    @property
+    def linked_data_prefixes(self) -> list[SitemapSemanticWebLinkedDataPrefix]:
+        """List of Linked Data URI prefixes."""
+        return self.__linked_data_prefixes
+
+    @property
+    def sparql_endpoint(self) -> SitemapSemanticWebSparqlEndpoint | None:
+        """SPARQL endpoint for the dataset."""
+        return self.__sparql_endpoint
+
+    @property
+    def data_dump_locations(self) -> list[str]:
+        """List of RDF dump file URLs."""
+        return self.__data_dump_locations
+
+    @property
+    def sample_uris(self) -> list[str]:
+        """List of sample URIs in the dataset."""
+        return self.__sample_uris
+
+    @property
+    def last_modified(self) -> datetime.datetime | None:
+        """Last modification date of the dataset."""
+        return self.__last_modified
+
+    @property
+    def change_frequency(self) -> str | None:
+        """Expected update frequency."""
+        return self.__change_frequency

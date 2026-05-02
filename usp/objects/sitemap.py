@@ -30,7 +30,7 @@ def _all_slots(target_cls):
     last_slot = {}
 
     for cls in mro:
-        attrs = getattr(cls, "__slots__", tuple())
+        attrs = getattr(cls, "__slots__", ())
         for attr in attrs:
             last_slot[attr] = cls
 
@@ -38,7 +38,7 @@ def _all_slots(target_cls):
     for attr, cls in last_slot.items():
         # Attrs belonging to parent classes may be mangled
         if cls is not target_cls and attr.startswith("__"):
-            attr = "_" + cls.__name__ + attr
+            attr = f"_{cls.__name__}{attr}"
         slots.add(attr)
 
     return slots
@@ -435,3 +435,81 @@ class IndexRobotsTxtSitemap(AbstractIndexSitemap):
     """
 
     pass
+
+
+class SemanticWebSitemap(AbstractSitemap):
+    """
+    Semantic Web (RDF) sitemap with dataset metadata from the SC (Semantic Crawling) extension.
+    
+    Unlike other sitemap types, this does not contain URLs to pages or sub-sitemaps,
+    but rather RDF dataset descriptions and access methods.
+    """
+
+    __slots__ = ["__datasets"]
+
+    def __init__(self, url: str, datasets: list = None):
+        """
+        Initialize a Semantic Web sitemap.
+
+        :param url: URL of this sitemap.
+        :param datasets: List of SitemapSemanticWebDataset objects.
+        """
+        super().__init__(url=url)
+        self.__datasets = datasets if datasets is not None else []
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, SemanticWebSitemap):
+            return False
+        return self.url == other.url and self.datasets == other.datasets
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(url={self.url}, datasets={self.datasets})"
+
+    def to_dict(self, with_pages=True) -> dict:
+        return {
+            "url": self.url,
+            "datasets": [dataset.to_dict() for dataset in self.datasets],
+        }
+
+    @property
+    def datasets(self) -> list:
+        """
+        Return list of RDF datasets described in this sitemap.
+
+        :return: List of SitemapSemanticWebDataset objects.
+        """
+        return self.__datasets
+
+    @property
+    def pages(self) -> list:
+        """
+        Semantic Web sitemaps do not contain pages.
+
+        :return: Empty list.
+        """
+        return []
+
+    def all_pages(self) -> Iterator[SitemapPage]:
+        """
+        Semantic Web sitemaps do not contain pages.
+
+        :return: Empty iterator.
+        """
+        return iter([])
+
+    @property
+    def sub_sitemaps(self) -> list:
+        """
+        Semantic Web sitemaps do not contain sub-sitemaps.
+
+        :return: Empty list.
+        """
+        return []
+
+    def all_sitemaps(self) -> Iterator["AbstractSitemap"]:
+        """
+        Semantic Web sitemaps do not contain sub-sitemaps.
+
+        :return: Empty iterator.
+        """
+        return iter([])

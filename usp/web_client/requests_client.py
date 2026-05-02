@@ -3,7 +3,7 @@
 import logging
 from http import HTTPStatus
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from usp import __version__
 
@@ -45,21 +45,17 @@ class RequestsWebClientSuccessResponse(AbstractWebClientSuccessResponse):
         return int(self.__requests_response.status_code)
 
     def status_message(self) -> str:
-        message = self.__requests_response.reason
-        if not message:
-            message = HTTPStatus(self.status_code()).phrase
-        return message
+        return self.__requests_response.reason or HTTPStatus(self.status_code()).phrase
 
     def header(self, case_insensitive_name: str) -> str | None:
         return self.__requests_response.headers.get(case_insensitive_name.lower(), None)
 
     def raw_data(self) -> bytes:
-        if self.__max_response_data_length:
-            data = self.__requests_response.content[: self.__max_response_data_length]
-        else:
-            data = self.__requests_response.content
-
-        return data
+        return (
+            self.__requests_response.content[: self.__max_response_data_length]
+            if self.__max_response_data_length
+            else self.__requests_response.content
+        )
 
     def url(self) -> str:
         return self.__requests_response.url
@@ -78,7 +74,7 @@ class RequestsWebClient(AbstractWebClient):
 
     __USER_AGENT = f"ultimate_sitemap_parser/{__version__}"
 
-    __HTTP_REQUEST_TIMEOUT = (9.05, 60)
+    __HTTP_REQUEST_TIMEOUT: tuple[float, float] = (9.05, 60.0)
     """
     HTTP request timeout.
 
@@ -91,6 +87,7 @@ class RequestsWebClient(AbstractWebClient):
         "__proxies",
         "__verify",
         "__waiter",
+        "__session",
     ]
 
     def __init__(
@@ -106,12 +103,12 @@ class RequestsWebClient(AbstractWebClient):
         :param random_wait: if true, wait time is multiplied by a random number between 0.5 and 1.5.
         :param session: a custom session object to use, or None to create a new one.
         """
-        self.__max_response_data_length = None
-        self.__timeout = self.__HTTP_REQUEST_TIMEOUT
-        self.__proxies = {}
-        self.__verify = verify
-        self.__waiter = RequestWaiter(wait, random_wait)
-        self.__session = session or requests.Session()
+        self.__max_response_data_length: int | None = None
+        self.__timeout: float | tuple[float, float] | None = self.__HTTP_REQUEST_TIMEOUT
+        self.__proxies: dict[str, str] = {}
+        self.__verify: bool = verify
+        self.__waiter: RequestWaiter = RequestWaiter(wait, random_wait)
+        self.__session: requests.Session = session or requests.Session()
 
     def set_timeout(self, timeout: float | tuple[float, float] | None) -> None:
         """Set HTTP request timeout.
@@ -134,7 +131,9 @@ class RequestsWebClient(AbstractWebClient):
         # Used mostly for testing
         self.__proxies = proxies
 
-    def set_max_response_data_length(self, max_response_data_length: int) -> None:
+    def set_max_response_data_length(
+        self, max_response_data_length: int | None
+    ) -> None:
         self.__max_response_data_length = max_response_data_length
 
     def get(self, url: str) -> AbstractWebClientResponse:
@@ -162,15 +161,13 @@ class RequestsWebClient(AbstractWebClient):
                     requests_response=response,
                     max_response_data_length=self.__max_response_data_length,
                 )
-            else:
-                message = f"{response.status_code} {response.reason}"
-                log.debug(f"Response content: {response.text}")
+            message = f"{response.status_code} {response.reason}"
+            log.debug(f"Response content: {response.text}")
 
-                if response.status_code in RETRYABLE_HTTP_STATUS_CODES:
-                    return RequestsWebClientErrorResponse(
-                        message=message, retryable=True
-                    )
-                else:
-                    return RequestsWebClientErrorResponse(
-                        message=message, retryable=False
-                    )
+            return (
+                RequestsWebClientErrorResponse(message=message, retryable=True)
+                if response.status_code in RETRYABLE_HTTP_STATUS_CODES
+                else RequestsWebClientErrorResponse(
+                    message=message, retryable=False
+                )
+            )
