@@ -1111,29 +1111,23 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
 
         if name == "sitemap:url":
             if self._current_page:
-                raise SitemapXMLParsingException(
-                    "Page is expected to be unset by <url>."
-                )
+                log.warning("Ignoring incomplete <url> entry before starting a new one.")
             self._current_page = self.Page()
         elif name == "image:image":
             if self._current_image:
-                raise SitemapXMLParsingException(
-                    "Image is expected to be unset by <image:image>."
-                )
+                log.warning("Ignoring nested <image:image> start.")
+                return
             if not self._current_page:
-                raise SitemapXMLParsingException(
-                    "Page is expected to be set before <image:image>."
-                )
+                log.warning("Skipping <image:image> outside <url>.")
+                return
             self._current_image = self.Image()
         elif name == "video:video":
             if self._current_video:
-                raise SitemapXMLParsingException(
-                    "Video is expected to be unset by <video:video>."
-                )
+                log.warning("Ignoring nested <video:video> start.")
+                return
             if not self._current_page:
-                raise SitemapXMLParsingException(
-                    "Page is expected to be set before <video:video>."
-                )
+                log.warning("Skipping <video:video> outside <url>.")
+                return
             self._current_video = self.Video()
         elif name == "video:restriction":
             if self._current_video:
@@ -1160,9 +1154,8 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
                 )
         elif name == "link":
             if not self._current_page:
-                raise SitemapXMLParsingException(
-                    "Page is expected to be set before <link>."
-                )
+                log.warning("Skipping <link> outside <url>.")
+                return
             if "rel" not in attrs or attrs["rel"] != "alternate":
                 log.warning(f"<link> element is missing rel attribute: {attrs}.")
             elif "hreflang" not in attrs or "href" not in attrs:
@@ -1180,26 +1173,32 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
 
     def xml_element_end(self, name: str) -> None:
         if not self._current_page and name != "sitemap:urlset":
-            raise SitemapXMLParsingException(
-                f"Page is expected to be set at the end of <{name}>."
-            )
+            log.debug(f"Skipping <{name}> outside <url>.")
+            super().xml_element_end(name=name)
+            return
 
         if name == "sitemap:url":
-            if self._current_page.url not in self._page_urls:
+            if self._current_page.url and self._current_page.url not in self._page_urls:
                 self._pages.append(self._current_page)
                 self._page_urls.add(self._current_page.url)
+            elif not self._current_page.url:
+                log.debug("Skipping malformed <url> entry because URL is unset.")
             self._current_page = None
         elif name == "image:image":
-            self._current_page.images.append(self._current_image)
+            if self._current_image:
+                self._current_page.images.append(self._current_image)
             self._current_image = None
         elif name == "video:video":
-            self._current_page.videos.append(self._current_video)
+            if self._current_video:
+                self._current_page.videos.append(self._current_video)
             self._current_video = None
         else:
             if name == "sitemap:loc":
-                # Every entry must have <loc>
-                self.__require_last_char_data_to_be_set(name=name)
-                self._current_page.url = self._last_char_data
+                # Every entry should have <loc>, skip malformed rows when missing.
+                if self._last_char_data:
+                    self._current_page.url = self._last_char_data
+                else:
+                    log.warning("Skipping empty <sitemap:loc> in <url> entry.")
 
             elif name == "sitemap:lastmod":
                 # Element might be present but character data might be empty
@@ -1226,9 +1225,11 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
                 self._current_page.news_publish_date = self._last_char_data
 
             elif name == "news:title":
-                # Every Google News sitemap entry must have <title>
-                self.__require_last_char_data_to_be_set(name=name)
-                self._current_page.news_title = self._last_char_data
+                # Title is required for valid news entries, but tolerate malformed rows.
+                if self._last_char_data:
+                    self._current_page.news_title = self._last_char_data
+                else:
+                    log.warning("Skipping empty <news:title>.")
 
             elif name == "news:access":
                 # Element might be present but character data might be empty
@@ -1243,9 +1244,11 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
                 self._current_page.news_stock_tickers = self._last_char_data
 
             elif name == "image:loc":
-                # Every image entry must have <loc>
-                self.__require_last_char_data_to_be_set(name=name)
-                self._current_image.loc = self._last_char_data
+                # Every image entry should have <loc>, but tolerate malformed entries.
+                if self._current_image and self._last_char_data:
+                    self._current_image.loc = self._last_char_data
+                else:
+                    log.warning("Skipping malformed <image:loc>.")
 
             elif name == "image:caption":
                 self._current_image.caption = self._last_char_data
@@ -1260,24 +1263,34 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
                 self._current_image.license = self._last_char_data
 
             elif name == "video:thumbnail_loc":
-                self.__require_last_char_data_to_be_set(name=name)
-                self._current_video.thumbnail_loc = self._last_char_data
+                if self._current_video and self._last_char_data:
+                    self._current_video.thumbnail_loc = self._last_char_data
+                else:
+                    log.warning("Skipping malformed <video:thumbnail_loc>.")
 
             elif name == "video:title":
-                self.__require_last_char_data_to_be_set(name=name)
-                self._current_video.title = self._last_char_data
+                if self._current_video and self._last_char_data:
+                    self._current_video.title = self._last_char_data
+                else:
+                    log.warning("Skipping malformed <video:title>.")
 
             elif name == "video:description":
-                self.__require_last_char_data_to_be_set(name=name)
-                self._current_video.description = self._last_char_data
+                if self._current_video and self._last_char_data:
+                    self._current_video.description = self._last_char_data
+                else:
+                    log.warning("Skipping malformed <video:description>.")
 
             elif name == "video:content_loc":
-                self.__require_last_char_data_to_be_set(name=name)
-                self._current_video.content_loc = self._last_char_data
+                if self._current_video and self._last_char_data:
+                    self._current_video.content_loc = self._last_char_data
+                else:
+                    log.warning("Skipping malformed <video:content_loc>.")
 
             elif name == "video:player_loc":
-                self.__require_last_char_data_to_be_set(name=name)
-                self._current_video.player_loc = self._last_char_data
+                if self._current_video and self._last_char_data:
+                    self._current_video.player_loc = self._last_char_data
+                else:
+                    log.warning("Skipping malformed <video:player_loc>.")
 
             elif name == "video:duration":
                 self._current_video.duration = self._last_char_data
