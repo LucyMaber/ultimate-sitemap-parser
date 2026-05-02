@@ -1,4 +1,6 @@
-from usp.fetch_parse import AbstractXMLSitemapParser
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from usp.fetch_parse import AbstractXMLSitemapParser
 
 
 class PagesXMLSitemapParser(AbstractXMLSitemapParser):
