@@ -1,5 +1,6 @@
 import textwrap
 from decimal import Decimal
+from unittest import mock
 
 from tests.tree.base import TreeTestBase
 from usp.objects.page import SitemapImage, SitemapPage, SitemapVideo
@@ -12,6 +13,78 @@ from usp.tree import sitemap_tree_for_homepage
 
 
 class TestXMLExts(TreeTestBase):
+    def test_video_pages_callback(self, requests_mock):
+        requests_mock.add_matcher(TreeTestBase.fallback_to_404_not_found_matcher)
+
+        requests_mock.get(
+            self.TEST_BASE_URL + "/robots.txt",
+            headers={"Content-Type": "text/plain"},
+            text=textwrap.dedent(
+                f"""
+                User-agent: *
+                Disallow: /whatever
+
+                Sitemap: {self.TEST_BASE_URL}/sitemap_video.xml
+                Sitemap: {self.TEST_BASE_URL}/sitemap_pages.xml
+            """
+            ).strip(),
+        )
+
+        requests_mock.get(
+            self.TEST_BASE_URL + "/sitemap_video.xml",
+            headers={"Content-Type": "text/xml"},
+            text=textwrap.dedent(
+                f"""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+                    xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
+                  <url>
+                    <loc>{self.TEST_BASE_URL}/video-story.html</loc>
+                    <video:video>
+                      <video:thumbnail_loc>{self.TEST_BASE_URL}/thumb.jpg</video:thumbnail_loc>
+                      <video:title>Example Video</video:title>
+                      <video:description>Example description</video:description>
+                    </video:video>
+                  </url>
+                </urlset>
+                """
+            ).strip(),
+        )
+
+        requests_mock.get(
+            self.TEST_BASE_URL + "/sitemap_pages.xml",
+            headers={"Content-Type": "text/xml"},
+            text=textwrap.dedent(
+                f"""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+                  <url>
+                    <loc>{self.TEST_BASE_URL}/regular-page.html</loc>
+                  </url>
+                </urlset>
+                """
+            ).strip(),
+        )
+
+        def recurse_list_callback(
+            urls: list[str], recursion_level: int, parent_urls: set[str]
+        ) -> list[str]:
+            assert recursion_level >= 0
+            _ = parent_urls
+            return [url for url in urls if "video" in url]
+
+        get_media_file = mock.Mock()
+
+        tree = sitemap_tree_for_homepage(
+            self.TEST_BASE_URL, recurse_list_callback=recurse_list_callback
+        )
+
+        for page in tree.all_pages():
+            if page.videos:
+                get_media_file(page.url)
+
+        get_media_file.assert_called_once_with(f"{self.TEST_BASE_URL}/video-story.html")
+
     def test_xml_image(self, requests_mock):
         requests_mock.add_matcher(TreeTestBase.fallback_to_404_not_found_matcher)
 
