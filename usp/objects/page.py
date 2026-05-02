@@ -31,9 +31,9 @@ class SitemapNewsStory:
         publication_name: str | None = None,
         publication_language: str | None = None,
         access: str | None = None,
-        genres: list[str] = None,
-        keywords: list[str] = None,
-        stock_tickers: list[str] = None,
+        genres: list[str] | None = None,
+        keywords: list[str] | None = None,
+        stock_tickers: list[str] | None = None,
     ):
         """
         Initialize a new Google News story.
@@ -116,9 +116,9 @@ class SitemapNewsStory:
                 self.publication_name,
                 self.publication_language,
                 self.access,
-                self.genres,
-                self.keywords,
-                self.stock_tickers,
+                tuple(self.genres),
+                tuple(self.keywords),
+                tuple(self.stock_tickers),
             )
         )
 
@@ -302,6 +302,349 @@ class SitemapImage:
         return self.__license
 
 
+SitemapVideoRestriction = tuple[str | None, tuple[str, ...]]
+SitemapVideoPrice = tuple[str | None, str | None, str | None, str | None]
+
+
+class SitemapVideo:
+    """Single video derived from a Google Video sitemap or Media RSS feed."""
+
+    __slots__ = [
+        "__thumbnail_loc",
+        "__title",
+        "__description",
+        "__content_loc",
+        "__player_loc",
+        "__duration",
+        "__expiration_date",
+        "__rating",
+        "__view_count",
+        "__publication_date",
+        "__family_friendly",
+        "__restriction",
+        "__platform",
+        "__requires_subscription",
+        "__uploader",
+        "__uploader_info",
+        "__live",
+        "__tags",
+        "__prices",
+        "__dcterms_valid",
+    ]
+
+    def __init__(
+        self,
+        thumbnail_loc: str | None = None,
+        title: str | None = None,
+        description: str | None = None,
+        content_loc: str | None = None,
+        player_loc: str | None = None,
+        duration: int | None = None,
+        expiration_date: datetime.datetime | None = None,
+        rating: Decimal | str | None = None,
+        view_count: int | None = None,
+        publication_date: datetime.datetime | None = None,
+        family_friendly: str | None = None,
+        restriction: SitemapVideoRestriction | None = None,
+        platform: SitemapVideoRestriction | None = None,
+        requires_subscription: str | None = None,
+        uploader: str | None = None,
+        uploader_info: str | None = None,
+        live: str | None = None,
+        tags: list[str] | None = None,
+        prices: list[SitemapVideoPrice] | None = None,
+        dcterms_valid: str | None = None,
+    ):
+        """Initialise a sitemap video.
+
+        :param thumbnail_loc: URL of a thumbnail image for the video.
+        :param title: Video title.
+        :param description: Video description.
+        :param content_loc: URL of the raw video content file.
+        :param player_loc: URL of the video player/embed page.
+        :param duration: Duration in seconds.
+        :param expiration_date: Date after which the video is no longer available.
+        :param rating: Video rating, usually 0.0 to 5.0 for Google Video sitemaps.
+        :param view_count: Number of times the video has been viewed.
+        :param publication_date: First publication date of the video.
+        :param family_friendly: Whether the video is family friendly, usually "yes" or "no".
+        :param restriction: Tuple of relationship and restricted values, for example ("allow", ("CA", "MX")).
+        :param platform: Tuple of relationship and platforms, for example ("allow", ("web", "tv")).
+        :param requires_subscription: Whether a subscription is required, usually "yes" or "no".
+        :param uploader: Video uploader name.
+        :param uploader_info: URL with more information about the uploader.
+        :param live: Whether the video is a livestream, usually "yes" or "no".
+        :param tags: Short tags describing the video.
+        :param prices: List of price tuples: (price, currency, type, info).
+        :param dcterms_valid: Raw dcterms:valid value from Media RSS.
+        """
+        self.__thumbnail_loc = thumbnail_loc
+        self.__title = title
+        self.__description = description
+        self.__content_loc = content_loc
+        self.__player_loc = player_loc
+        self.__duration = duration
+        self.__expiration_date = expiration_date
+        self.__rating = rating
+        self.__view_count = view_count
+        self.__publication_date = publication_date
+        self.__family_friendly = family_friendly
+        self.__restriction = restriction
+        self.__platform = platform
+        self.__requires_subscription = requires_subscription
+        self.__uploader = uploader
+        self.__uploader_info = uploader_info
+        self.__live = live
+        self.__tags = tags if tags else []
+        self.__prices = prices if prices else []
+        self.__dcterms_valid = dcterms_valid
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, SitemapVideo):
+            raise NotImplementedError
+
+        if self.thumbnail_loc != other.thumbnail_loc:
+            return False
+        if self.title != other.title:
+            return False
+        if self.description != other.description:
+            return False
+        if self.content_loc != other.content_loc:
+            return False
+        if self.player_loc != other.player_loc:
+            return False
+        if self.duration != other.duration:
+            return False
+        if self.expiration_date != other.expiration_date:
+            return False
+        if self.rating != other.rating:
+            return False
+        if self.view_count != other.view_count:
+            return False
+        if self.publication_date != other.publication_date:
+            return False
+        if self.family_friendly != other.family_friendly:
+            return False
+        if self.restriction != other.restriction:
+            return False
+        if self.platform != other.platform:
+            return False
+        if self.requires_subscription != other.requires_subscription:
+            return False
+        if self.uploader != other.uploader:
+            return False
+        if self.uploader_info != other.uploader_info:
+            return False
+        if self.live != other.live:
+            return False
+        if self.tags != other.tags:
+            return False
+        if self.prices != other.prices:
+            return False
+        if self.dcterms_valid != other.dcterms_valid:
+            return False
+
+        return True
+
+    def to_dict(self):
+        """Convert to a dictionary representation.
+
+        :return: the video data as a dictionary
+        """
+        return {
+            "thumbnail_loc": self.thumbnail_loc,
+            "title": self.title,
+            "description": self.description,
+            "content_loc": self.content_loc,
+            "player_loc": self.player_loc,
+            "duration": self.duration,
+            "expiration_date": self.expiration_date,
+            "rating": self.rating,
+            "view_count": self.view_count,
+            "publication_date": self.publication_date,
+            "family_friendly": self.family_friendly,
+            "restriction": {
+                "relationship": self.restriction[0],
+                "values": list(self.restriction[1]),
+            }
+            if self.restriction
+            else None,
+            "platform": {
+                "relationship": self.platform[0],
+                "values": list(self.platform[1]),
+            }
+            if self.platform
+            else None,
+            "requires_subscription": self.requires_subscription,
+            "uploader": self.uploader,
+            "uploader_info": self.uploader_info,
+            "live": self.live,
+            "tags": self.tags,
+            "prices": [
+                {
+                    "price": price,
+                    "currency": currency,
+                    "type": price_type,
+                    "info": info,
+                }
+                for price, currency, price_type, info in self.prices
+            ],
+            "dcterms_valid": self.dcterms_valid,
+        }
+
+    def __hash__(self):
+        return hash(
+            (
+                self.thumbnail_loc,
+                self.title,
+                self.description,
+                self.content_loc,
+                self.player_loc,
+                self.duration,
+                self.expiration_date,
+                self.rating,
+                self.view_count,
+                self.publication_date,
+                self.family_friendly,
+                self.restriction,
+                self.platform,
+                self.requires_subscription,
+                self.uploader,
+                self.uploader_info,
+                self.live,
+                tuple(self.tags),
+                tuple(self.prices),
+                self.dcterms_valid,
+            )
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"thumbnail_loc={self.thumbnail_loc}, "
+            f"title={self.title}, "
+            f"description={self.description}, "
+            f"content_loc={self.content_loc}, "
+            f"player_loc={self.player_loc}, "
+            f"duration={self.duration}, "
+            f"expiration_date={self.expiration_date}, "
+            f"rating={self.rating}, "
+            f"view_count={self.view_count}, "
+            f"publication_date={self.publication_date}, "
+            f"family_friendly={self.family_friendly}, "
+            f"restriction={self.restriction}, "
+            f"platform={self.platform}, "
+            f"requires_subscription={self.requires_subscription}, "
+            f"uploader={self.uploader}, "
+            f"uploader_info={self.uploader_info}, "
+            f"live={self.live}, "
+            f"tags={self.tags}, "
+            f"prices={self.prices}, "
+            f"dcterms_valid={self.dcterms_valid}"
+            ")"
+        )
+
+    @property
+    def thumbnail_loc(self) -> str | None:
+        """Get the URL of a thumbnail image for the video."""
+        return self.__thumbnail_loc
+
+    @property
+    def title(self) -> str | None:
+        """Get the video title."""
+        return self.__title
+
+    @property
+    def description(self) -> str | None:
+        """Get the video description."""
+        return self.__description
+
+    @property
+    def content_loc(self) -> str | None:
+        """Get the URL of the raw video content file."""
+        return self.__content_loc
+
+    @property
+    def player_loc(self) -> str | None:
+        """Get the URL of the video player/embed page."""
+        return self.__player_loc
+
+    @property
+    def duration(self) -> int | None:
+        """Get the duration in seconds."""
+        return self.__duration
+
+    @property
+    def expiration_date(self) -> datetime.datetime | None:
+        """Get the date after which the video is no longer available."""
+        return self.__expiration_date
+
+    @property
+    def rating(self) -> Decimal | str | None:
+        """Get the video rating."""
+        return self.__rating
+
+    @property
+    def view_count(self) -> int | None:
+        """Get the view count."""
+        return self.__view_count
+
+    @property
+    def publication_date(self) -> datetime.datetime | None:
+        """Get the first publication date of the video."""
+        return self.__publication_date
+
+    @property
+    def family_friendly(self) -> str | None:
+        """Get whether the video is family friendly."""
+        return self.__family_friendly
+
+    @property
+    def restriction(self) -> SitemapVideoRestriction | None:
+        """Get country or other restrictions for the video."""
+        return self.__restriction
+
+    @property
+    def platform(self) -> SitemapVideoRestriction | None:
+        """Get platform restrictions for the video."""
+        return self.__platform
+
+    @property
+    def requires_subscription(self) -> str | None:
+        """Get whether a subscription is required to view the video."""
+        return self.__requires_subscription
+
+    @property
+    def uploader(self) -> str | None:
+        """Get the video uploader name."""
+        return self.__uploader
+
+    @property
+    def uploader_info(self) -> str | None:
+        """Get the URL with more information about the uploader."""
+        return self.__uploader_info
+
+    @property
+    def live(self) -> str | None:
+        """Get whether the video is a livestream."""
+        return self.__live
+
+    @property
+    def tags(self) -> list[str]:
+        """Get short tags describing the video."""
+        return self.__tags
+
+    @property
+    def prices(self) -> list[SitemapVideoPrice]:
+        """Get Media RSS price entries as (price, currency, type, info) tuples."""
+        return self.__prices
+
+    @property
+    def dcterms_valid(self) -> str | None:
+        """Get the raw dcterms:valid value from Media RSS."""
+        return self.__dcterms_valid
+
+
 @unique
 class SitemapPageChangeFrequency(Enum):
     """Change frequency of a sitemap URL."""
@@ -330,6 +673,7 @@ class SitemapPage:
         "__change_frequency",
         "__news_story",
         "__images",
+        "__videos",
         "__alternates",
     ]
 
@@ -341,6 +685,7 @@ class SitemapPage:
         change_frequency: SitemapPageChangeFrequency | None = None,
         news_story: SitemapNewsStory | None = None,
         images: list[SitemapImage] | None = None,
+        videos: list[SitemapVideo] | None = None,
         alternates: list[tuple[str, str]] | None = None,
     ):
         """
@@ -351,6 +696,9 @@ class SitemapPage:
         :param last_modified: Date of last modification of the URL.
         :param change_frequency: Change frequency of a sitemap URL.
         :param news_story: Google News story attached to the URL.
+        :param images: Google Image sitemap images attached to the URL.
+        :param videos: Google Video sitemap or Media RSS videos attached to the URL.
+        :param alternates: Alternate language URLs attached to the URL.
         """
         self.__url = url
         self.__priority = priority
@@ -358,6 +706,7 @@ class SitemapPage:
         self.__change_frequency = change_frequency
         self.__news_story = news_story
         self.__images = images
+        self.__videos = videos
         self.__alternates = alternates
 
     def __eq__(self, other) -> bool:
@@ -382,6 +731,9 @@ class SitemapPage:
         if self.images != other.images:
             return False
 
+        if self.videos != other.videos:
+            return False
+
         if self.alternates != other.alternates:
             return False
 
@@ -403,7 +755,9 @@ class SitemapPage:
             f"last_modified={self.last_modified}, "
             f"change_frequency={self.change_frequency}, "
             f"news_story={self.news_story}, "
-            f"images={self.images}"
+            f"images={self.images}, "
+            f"videos={self.videos}, "
+            f"alternates={self.alternates}"
             ")"
         )
 
@@ -423,6 +777,10 @@ class SitemapPage:
             "images": [image.to_dict() for image in self.images]
             if self.images
             else None,
+            "videos": [video.to_dict() for video in self.videos]
+            if self.videos
+            else None,
+            "alternates": self.alternates,
         }
 
     @property
@@ -460,6 +818,14 @@ class SitemapPage:
         See :ref:`google-image-ext` reference
         """
         return self.__images
+
+    @property
+    def videos(self) -> list[SitemapVideo] | None:
+        """Get the videos attached to the URL.
+
+        Supports Google Video sitemaps and Media RSS video metadata.
+        """
+        return self.__videos
 
     @property
     def alternates(self) -> list[tuple[str, str]] | None:

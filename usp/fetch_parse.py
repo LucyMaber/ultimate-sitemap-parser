@@ -31,6 +31,7 @@ from .objects.page import (
     SitemapNewsStory,
     SitemapPage,
     SitemapPageChangeFrequency,
+    SitemapVideo,
 )
 from .objects.sitemap import (
     AbstractSitemap,
@@ -471,6 +472,10 @@ class XMLSitemapParser(AbstractSitemapParser):
         * Elements from http://www.google.com/schemas/sitemap-news/0.9 namespace will be prefixed with "news:",
           e.g. "<publication>" will become "<news:publication>"
 
+        * Elements from http://www.google.com/schemas/sitemap-video/1.1 namespace will be prefixed with "video:".
+
+        * Elements from http://search.yahoo.com/mrss/ namespace will be prefixed with "media:".
+
         For non-sitemap namespaces, return the element name with the namespace stripped.
 
         :param name: Namespace URL plus XML element name, e.g. "http://www.sitemaps.org/schemas/sitemap/0.9 loc"
@@ -500,6 +505,10 @@ class XMLSitemapParser(AbstractSitemapParser):
             name = f"image:{name}"
         elif "/sitemap-video/" in namespace_url:
             name = f"video:{name}"
+        elif "search.yahoo.com/mrss" in namespace_url:
+            name = f"media:{name}"
+        elif "purl.org/dc/terms" in namespace_url or "dublincore.org" in namespace_url:
+            name = f"dcterms:{name}"
         elif name in {"urlset", "sitemapindex"}:
             # XML sitemap root tag but namespace is not set
             self._is_non_ns_sitemap = True
@@ -752,6 +761,264 @@ MIN_VALID_PRIORITY = Decimal("0.0")
 MAX_VALID_PRIORITY = Decimal("1.0")
 
 
+def _parse_int(value: str | None) -> int | None:
+    value = html_unescape_strip(value)
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        log.warning(f"Invalid integer value: {value}")
+        return None
+
+
+def _parse_decimal_or_string(value: str | None) -> Decimal | str | None:
+    value = html_unescape_strip(value)
+    if not value:
+        return None
+    try:
+        return Decimal(value)
+    except InvalidOperation:
+        return value
+
+
+def _split_space_delimited_values(value: str | None) -> tuple[str, ...]:
+    value = html_unescape_strip(value)
+    if not value:
+        return tuple()
+    return tuple(x.strip() for x in value.split() if x.strip())
+
+
+def _parse_optional_iso8601_date(value: str | None):
+    value = html_unescape_strip(value)
+    if not value:
+        return None
+    return parse_iso8601_date(value)
+
+
+class _ParsedVideo:
+    """Mutable video row used while parsing Google Video sitemap and Media RSS elements."""
+
+    __slots__ = [
+        "thumbnail_loc",
+        "title",
+        "description",
+        "content_loc",
+        "player_loc",
+        "duration",
+        "expiration_date",
+        "rating",
+        "view_count",
+        "publication_date",
+        "family_friendly",
+        "restriction_relationship",
+        "restriction_values",
+        "platform_relationship",
+        "platform_values",
+        "requires_subscription",
+        "uploader",
+        "uploader_info",
+        "live",
+        "tags",
+        "prices",
+        "dcterms_valid",
+    ]
+
+    def __init__(self):
+        self.thumbnail_loc = None
+        self.title = None
+        self.description = None
+        self.content_loc = None
+        self.player_loc = None
+        self.duration = None
+        self.expiration_date = None
+        self.rating = None
+        self.view_count = None
+        self.publication_date = None
+        self.family_friendly = None
+        self.restriction_relationship = None
+        self.restriction_values = None
+        self.platform_relationship = None
+        self.platform_values = None
+        self.requires_subscription = None
+        self.uploader = None
+        self.uploader_info = None
+        self.live = None
+        self.tags = []
+        self.prices = []
+        self.dcterms_valid = None
+
+    def apply_media_content_attrs(self, attrs: dict[str, str]) -> None:
+        content_loc = html_unescape_strip(attrs.get("url"))
+        if content_loc and not self.content_loc:
+            self.content_loc = content_loc
+
+        duration = html_unescape_strip(attrs.get("duration"))
+        if duration and not self.duration:
+            self.duration = duration
+
+    def apply_media_thumbnail_attrs(self, attrs: dict[str, str]) -> None:
+        thumbnail_loc = html_unescape_strip(attrs.get("url"))
+        if thumbnail_loc and not self.thumbnail_loc:
+            self.thumbnail_loc = thumbnail_loc
+
+    def apply_media_player_attrs(self, attrs: dict[str, str]) -> None:
+        player_loc = html_unescape_strip(attrs.get("url"))
+        if player_loc and not self.player_loc:
+            self.player_loc = player_loc
+
+    def apply_restriction_attrs(self, attrs: dict[str, str]) -> None:
+        relationship = html_unescape_strip(attrs.get("relationship"))
+        if relationship:
+            self.restriction_relationship = relationship
+
+    def apply_platform_attrs(self, attrs: dict[str, str]) -> None:
+        relationship = html_unescape_strip(attrs.get("relationship"))
+        if relationship:
+            self.platform_relationship = relationship
+
+    def apply_uploader_attrs(self, attrs: dict[str, str]) -> None:
+        uploader_info = html_unescape_strip(attrs.get("info"))
+        if uploader_info:
+            self.uploader_info = uploader_info
+
+    def add_price(self, value: str | None, attrs: dict[str, str]) -> None:
+        self.prices.append(
+            (
+                html_unescape_strip(value),
+                html_unescape_strip(attrs.get("currency")),
+                html_unescape_strip(attrs.get("type")),
+                html_unescape_strip(attrs.get("info")),
+            )
+        )
+
+    def add_tag(self, value: str | None) -> None:
+        value = html_unescape_strip(value)
+        if value:
+            self.tags.append(value)
+
+    def add_comma_separated_tags(self, value: str | None) -> None:
+        value = html_unescape_strip(value)
+        if not value:
+            return
+        for tag in value.split(","):
+            self.add_tag(tag)
+
+    def apply_dcterms_valid(self, value: str | None) -> None:
+        value = html_unescape_strip(value)
+        if not value:
+            return
+
+        self.dcterms_valid = value
+        valid_parts = dict(
+            re.findall(r"\b(start|end)\s*=\s*([^;]+)", value, flags=re.IGNORECASE)
+        )
+        if "start" in valid_parts and not self.publication_date:
+            self.publication_date = valid_parts["start"]
+        if "end" in valid_parts and not self.expiration_date:
+            self.expiration_date = valid_parts["end"]
+
+    def video(self) -> SitemapVideo | None:
+        thumbnail_loc = html_unescape_strip(self.thumbnail_loc)
+        title = html_unescape_strip(self.title)
+        description = html_unescape_strip(self.description)
+        content_loc = html_unescape_strip(self.content_loc)
+        player_loc = html_unescape_strip(self.player_loc)
+        family_friendly = html_unescape_strip(self.family_friendly)
+        requires_subscription = html_unescape_strip(self.requires_subscription)
+        uploader = html_unescape_strip(self.uploader)
+        uploader_info = html_unescape_strip(self.uploader_info)
+        live = html_unescape_strip(self.live)
+        dcterms_valid = html_unescape_strip(self.dcterms_valid)
+
+        tags = []
+        for tag in self.tags:
+            tag = html_unescape_strip(tag)
+            if tag:
+                tags.append(tag)
+
+        prices = []
+        for price, currency, price_type, info in self.prices:
+            price = html_unescape_strip(price)
+            currency = html_unescape_strip(currency)
+            price_type = html_unescape_strip(price_type)
+            info = html_unescape_strip(info)
+            if price or currency or price_type or info:
+                prices.append((price, currency, price_type, info))
+
+        restriction_values = _split_space_delimited_values(self.restriction_values)
+        restriction = None
+        if self.restriction_relationship or restriction_values:
+            restriction = (
+                html_unescape_strip(self.restriction_relationship),
+                restriction_values,
+            )
+
+        platform_values = _split_space_delimited_values(self.platform_values)
+        platform = None
+        if self.platform_relationship or platform_values:
+            platform = (
+                html_unescape_strip(self.platform_relationship),
+                platform_values,
+            )
+
+        duration = _parse_int(self.duration)
+        view_count = _parse_int(self.view_count)
+        rating = _parse_decimal_or_string(self.rating)
+        expiration_date = _parse_optional_iso8601_date(self.expiration_date)
+        publication_date = _parse_optional_iso8601_date(self.publication_date)
+
+        has_video_data = any(
+            [
+                thumbnail_loc,
+                title,
+                description,
+                content_loc,
+                player_loc,
+                duration,
+                expiration_date,
+                rating,
+                view_count,
+                publication_date,
+                family_friendly,
+                restriction,
+                platform,
+                requires_subscription,
+                uploader,
+                uploader_info,
+                live,
+                tags,
+                prices,
+                dcterms_valid,
+            ]
+        )
+        if not has_video_data:
+            return None
+
+        return SitemapVideo(
+            thumbnail_loc=thumbnail_loc,
+            title=title,
+            description=description,
+            content_loc=content_loc,
+            player_loc=player_loc,
+            duration=duration,
+            expiration_date=expiration_date,
+            rating=rating,
+            view_count=view_count,
+            publication_date=publication_date,
+            family_friendly=family_friendly,
+            restriction=restriction,
+            platform=platform,
+            requires_subscription=requires_subscription,
+            uploader=uploader,
+            uploader_info=uploader_info,
+            live=live,
+            tags=tags,
+            prices=prices,
+            dcterms_valid=dcterms_valid,
+        )
+
+
 class PagesXMLSitemapParser(AbstractXMLSitemapParser):
     """
     Pages XML sitemap parser.
@@ -794,6 +1061,7 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
             "news_keywords",
             "news_stock_tickers",
             "images",
+            "videos",
             "alternates",
         ]
 
@@ -811,6 +1079,7 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
             self.news_keywords = None
             self.news_stock_tickers = None
             self.images = []
+            self.videos = []
             self.alternates = []
 
         def __hash__(self):
@@ -916,6 +1185,13 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
                     for image in self.images
                 ]
 
+            sitemap_videos = None
+            if len(self.videos) > 0:
+                sitemap_videos = [video.video() for video in self.videos]
+                sitemap_videos = [video for video in sitemap_videos if video]
+                if len(sitemap_videos) == 0:
+                    sitemap_videos = None
+
             alternates = None
             if len(self.alternates) > 0:
                 alternates = self.alternates
@@ -927,10 +1203,17 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
                 priority=priority,
                 news_story=sitemap_news_story,
                 images=sitemap_images,
+                videos=sitemap_videos,
                 alternates=alternates,
             )
 
-    __slots__ = ["_current_page", "_pages", "_page_urls", "_current_image"]
+    __slots__ = [
+        "_current_page",
+        "_pages",
+        "_page_urls",
+        "_current_image",
+        "_current_video",
+    ]
 
     def __init__(self, url: str):
         super().__init__(url=url)
@@ -939,6 +1222,7 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
         self._pages = []
         self._page_urls = set()
         self._current_image = None
+        self._current_video = None
 
     def xml_element_start(self, name: str, attrs: dict[str, str]) -> None:
         super().xml_element_start(name=name, attrs=attrs)
@@ -959,6 +1243,25 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
                     "Page is expected to be set before <image:image>."
                 )
             self._current_image = self.Image()
+        elif name == "video:video":
+            if self._current_video:
+                raise SitemapXMLParsingException(
+                    "Video is expected to be unset by <video:video>."
+                )
+            if not self._current_page:
+                raise SitemapXMLParsingException(
+                    "Page is expected to be set before <video:video>."
+                )
+            self._current_video = _ParsedVideo()
+        elif name == "video:restriction":
+            if self._current_video:
+                self._current_video.apply_restriction_attrs(attrs)
+        elif name == "video:platform":
+            if self._current_video:
+                self._current_video.apply_platform_attrs(attrs)
+        elif name == "video:uploader":
+            if self._current_video:
+                self._current_video.apply_uploader_attrs(attrs)
         elif name == "link":
             if not self._current_page:
                 raise SitemapXMLParsingException(
@@ -993,6 +1296,9 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
         elif name == "image:image":
             self._current_page.images.append(self._current_image)
             self._current_image = None
+        elif name == "video:video":
+            self._current_page.videos.append(self._current_video)
+            self._current_video = None
         else:
             if name == "sitemap:loc":
                 # Every entry must have <loc>
@@ -1057,6 +1363,61 @@ class PagesXMLSitemapParser(AbstractXMLSitemapParser):
             elif name == "image:license":
                 self._current_image.license = self._last_char_data
 
+            elif self._current_video:
+                if name == "video:thumbnail_loc":
+                    self.__require_last_char_data_to_be_set(name=name)
+                    self._current_video.thumbnail_loc = self._last_char_data
+
+                elif name == "video:title":
+                    self.__require_last_char_data_to_be_set(name=name)
+                    self._current_video.title = self._last_char_data
+
+                elif name == "video:description":
+                    self.__require_last_char_data_to_be_set(name=name)
+                    self._current_video.description = self._last_char_data
+
+                elif name == "video:content_loc":
+                    self._current_video.content_loc = self._last_char_data
+
+                elif name == "video:player_loc":
+                    self._current_video.player_loc = self._last_char_data
+
+                elif name == "video:duration":
+                    self._current_video.duration = self._last_char_data
+
+                elif name == "video:expiration_date":
+                    self._current_video.expiration_date = self._last_char_data
+
+                elif name == "video:rating":
+                    self._current_video.rating = self._last_char_data
+
+                elif name == "video:view_count":
+                    self._current_video.view_count = self._last_char_data
+
+                elif name == "video:publication_date":
+                    self._current_video.publication_date = self._last_char_data
+
+                elif name == "video:family_friendly":
+                    self._current_video.family_friendly = self._last_char_data
+
+                elif name == "video:restriction":
+                    self._current_video.restriction_values = self._last_char_data
+
+                elif name == "video:platform":
+                    self._current_video.platform_values = self._last_char_data
+
+                elif name == "video:requires_subscription":
+                    self._current_video.requires_subscription = self._last_char_data
+
+                elif name == "video:uploader":
+                    self._current_video.uploader = self._last_char_data
+
+                elif name == "video:live":
+                    self._current_video.live = self._last_char_data
+
+                elif name == "video:tag":
+                    self._current_video.add_tag(self._last_char_data)
+
         super().xml_element_end(name=name)
 
     def sitemap(self) -> AbstractSitemap:
@@ -1089,6 +1450,7 @@ class PagesRSSSitemapParser(AbstractXMLSitemapParser):
             "title",
             "description",
             "publication_date",
+            "videos",
         ]
 
         def __init__(self):
@@ -1096,6 +1458,7 @@ class PagesRSSSitemapParser(AbstractXMLSitemapParser):
             self.title = None
             self.description = None
             self.publication_date = None
+            self.videos = []
 
         def __hash__(self):
             return hash(
@@ -1114,25 +1477,44 @@ class PagesRSSSitemapParser(AbstractXMLSitemapParser):
                 log.error("Link is unset")
                 return None
 
+            sitemap_videos = [video.video() for video in self.videos]
+            sitemap_videos = [video for video in sitemap_videos if video]
+
             title = html_unescape_strip(self.title)
             description = html_unescape_strip(self.description)
-            if not (title or description):
-                log.error("Both title and description are unset")
+            if not (title or description or sitemap_videos):
+                log.error("Title, description, and videos are unset")
                 return None
 
             publication_date = html_unescape_strip(self.publication_date)
             if publication_date:
                 publication_date = parse_rfc2822_date(publication_date)
 
+            fallback_video = sitemap_videos[0] if sitemap_videos else None
+            story_title = (
+                title
+                or description
+                or (fallback_video.title if fallback_video else None)
+                or (fallback_video.description if fallback_video else None)
+            )
+
             return SitemapPage(
                 url=link,
                 news_story=SitemapNewsStory(
-                    title=title or description,
+                    title=story_title,
                     publish_date=publication_date,
                 ),
+                videos=sitemap_videos if sitemap_videos else None,
             )
 
-    __slots__ = ["_current_page", "_pages", "_page_links"]
+    __slots__ = [
+        "_current_page",
+        "_pages",
+        "_page_links",
+        "_current_video",
+        "_current_video_is_group",
+        "_current_media_price_attrs",
+    ]
 
     def __init__(self, url: str):
         super().__init__(url=url)
@@ -1140,6 +1522,14 @@ class PagesRSSSitemapParser(AbstractXMLSitemapParser):
         self._current_page = None
         self._pages = []
         self._page_links = set()
+        self._current_video = None
+        self._current_video_is_group = False
+        self._current_media_price_attrs = {}
+
+    def _ensure_current_video(self) -> None:
+        if not self._current_video:
+            self._current_video = _ParsedVideo()
+            self._current_video_is_group = False
 
     def xml_element_start(self, name: str, attrs: dict[str, str]) -> None:
         super().xml_element_start(name=name, attrs=attrs)
@@ -1150,6 +1540,27 @@ class PagesRSSSitemapParser(AbstractXMLSitemapParser):
                     "Page is expected to be unset by <item>."
                 )
             self._current_page = self.Page()
+        elif self._current_page:
+            if name == "media:group":
+                if self._current_video:
+                    self._current_page.videos.append(self._current_video)
+                self._current_video = _ParsedVideo()
+                self._current_video_is_group = True
+            elif name == "media:content":
+                self._ensure_current_video()
+                self._current_video.apply_media_content_attrs(attrs)
+            elif name == "media:thumbnail":
+                self._ensure_current_video()
+                self._current_video.apply_media_thumbnail_attrs(attrs)
+            elif name == "media:player":
+                self._ensure_current_video()
+                self._current_video.apply_media_player_attrs(attrs)
+            elif name == "media:restriction":
+                self._ensure_current_video()
+                self._current_video.apply_restriction_attrs(attrs)
+            elif name == "media:price":
+                self._ensure_current_video()
+                self._current_media_price_attrs = attrs
 
     def __require_last_char_data_to_be_set(self, name: str) -> None:
         if not self._last_char_data:
@@ -1157,14 +1568,51 @@ class PagesRSSSitemapParser(AbstractXMLSitemapParser):
                 f"Character data is expected to be set at the end of <{name}>."
             )
 
+    def _apply_media_end_element(self, name: str) -> None:
+        if not self._current_video:
+            return
+
+        if name == "media:title":
+            self._current_video.title = self._last_char_data
+        elif name == "media:description":
+            self._current_video.description = self._last_char_data
+        elif name == "media:keywords":
+            self._current_video.add_comma_separated_tags(self._last_char_data)
+        elif name == "media:category":
+            self._current_video.add_tag(self._last_char_data)
+        elif name == "media:rating":
+            self._current_video.rating = self._last_char_data
+        elif name == "media:restriction":
+            self._current_video.restriction_values = self._last_char_data
+        elif name == "media:price":
+            self._current_video.add_price(
+                self._last_char_data, self._current_media_price_attrs
+            )
+            self._current_media_price_attrs = {}
+        elif name == "media:credit":
+            self._current_video.uploader = self._last_char_data
+        elif name == "dcterms:valid":
+            self._current_video.apply_dcterms_valid(self._last_char_data)
+
     def xml_element_end(self, name: str) -> None:
         # If within <item> already
         if self._current_page:
             if name == "item":
+                if self._current_video:
+                    self._current_page.videos.append(self._current_video)
+                    self._current_video = None
+                    self._current_video_is_group = False
+
                 if self._current_page.link not in self._page_links:
                     self._pages.append(self._current_page)
                     self._page_links.add(self._current_page.link)
                 self._current_page = None
+
+            elif name == "media:group":
+                if self._current_video:
+                    self._current_page.videos.append(self._current_video)
+                    self._current_video = None
+                    self._current_video_is_group = False
 
             else:
                 if name == "link":
@@ -1185,6 +1633,9 @@ class PagesRSSSitemapParser(AbstractXMLSitemapParser):
                 elif name == "pubDate":
                     # Element might be present but character data might be empty
                     self._current_page.publication_date = self._last_char_data
+
+                else:
+                    self._apply_media_end_element(name=name)
 
         super().xml_element_end(name=name)
 
@@ -1222,6 +1673,7 @@ class PagesAtomSitemapParser(AbstractXMLSitemapParser):
             "title",
             "description",
             "publication_date",
+            "videos",
         ]
 
         def __init__(self):
@@ -1229,6 +1681,7 @@ class PagesAtomSitemapParser(AbstractXMLSitemapParser):
             self.title = None
             self.description = None
             self.publication_date = None
+            self.videos = []
 
         def __hash__(self):
             return hash(
@@ -1247,22 +1700,34 @@ class PagesAtomSitemapParser(AbstractXMLSitemapParser):
                 log.error("Link is unset")
                 return None
 
+            sitemap_videos = [video.video() for video in self.videos]
+            sitemap_videos = [video for video in sitemap_videos if video]
+
             title = html_unescape_strip(self.title)
             description = html_unescape_strip(self.description)
-            if not (title or description):
-                log.error("Both title and description are unset")
+            if not (title or description or sitemap_videos):
+                log.error("Title, description, and videos are unset")
                 return None
 
             publication_date = html_unescape_strip(self.publication_date)
             if publication_date:
                 publication_date = parse_iso8601_date(publication_date)
 
+            fallback_video = sitemap_videos[0] if sitemap_videos else None
+            story_title = (
+                title
+                or description
+                or (fallback_video.title if fallback_video else None)
+                or (fallback_video.description if fallback_video else None)
+            )
+
             return SitemapPage(
                 url=link,
                 news_story=SitemapNewsStory(
-                    title=title or description,
+                    title=story_title,
                     publish_date=publication_date,
                 ),
+                videos=sitemap_videos if sitemap_videos else None,
             )
 
     __slots__ = [
@@ -1270,6 +1735,9 @@ class PagesAtomSitemapParser(AbstractXMLSitemapParser):
         "_pages",
         "_page_links",
         "_last_link_rel_self_href",
+        "_current_video",
+        "_current_video_is_group",
+        "_current_media_price_attrs",
     ]
 
     def __init__(self, url: str):
@@ -1279,6 +1747,14 @@ class PagesAtomSitemapParser(AbstractXMLSitemapParser):
         self._pages = []
         self._page_links = set()
         self._last_link_rel_self_href = None
+        self._current_video = None
+        self._current_video_is_group = False
+        self._current_media_price_attrs = {}
+
+    def _ensure_current_video(self) -> None:
+        if not self._current_video:
+            self._current_video = _ParsedVideo()
+            self._current_video_is_group = False
 
     def xml_element_start(self, name: str, attrs: dict[str, str]) -> None:
         super().xml_element_start(name=name, attrs=attrs)
@@ -1298,11 +1774,59 @@ class PagesAtomSitemapParser(AbstractXMLSitemapParser):
                 ):
                     self._last_link_rel_self_href = attrs.get("href", None)
 
+        elif self._current_page:
+            if name == "media:group":
+                if self._current_video:
+                    self._current_page.videos.append(self._current_video)
+                self._current_video = _ParsedVideo()
+                self._current_video_is_group = True
+            elif name == "media:content":
+                self._ensure_current_video()
+                self._current_video.apply_media_content_attrs(attrs)
+            elif name == "media:thumbnail":
+                self._ensure_current_video()
+                self._current_video.apply_media_thumbnail_attrs(attrs)
+            elif name == "media:player":
+                self._ensure_current_video()
+                self._current_video.apply_media_player_attrs(attrs)
+            elif name == "media:restriction":
+                self._ensure_current_video()
+                self._current_video.apply_restriction_attrs(attrs)
+            elif name == "media:price":
+                self._ensure_current_video()
+                self._current_media_price_attrs = attrs
+
     def __require_last_char_data_to_be_set(self, name: str) -> None:
         if not self._last_char_data:
             raise SitemapXMLParsingException(
                 f"Character data is expected to be set at the end of <{name}>."
             )
+
+    def _apply_media_end_element(self, name: str) -> None:
+        if not self._current_video:
+            return
+
+        if name == "media:title":
+            self._current_video.title = self._last_char_data
+        elif name == "media:description":
+            self._current_video.description = self._last_char_data
+        elif name == "media:keywords":
+            self._current_video.add_comma_separated_tags(self._last_char_data)
+        elif name == "media:category":
+            self._current_video.add_tag(self._last_char_data)
+        elif name == "media:rating":
+            self._current_video.rating = self._last_char_data
+        elif name == "media:restriction":
+            self._current_video.restriction_values = self._last_char_data
+        elif name == "media:price":
+            self._current_video.add_price(
+                self._last_char_data, self._current_media_price_attrs
+            )
+            self._current_media_price_attrs = {}
+        elif name == "media:credit":
+            self._current_video.uploader = self._last_char_data
+        elif name == "dcterms:valid":
+            self._current_video.apply_dcterms_valid(self._last_char_data)
 
     def xml_element_end(self, name: str) -> None:
         # If within <entry> already
@@ -1312,11 +1836,22 @@ class PagesAtomSitemapParser(AbstractXMLSitemapParser):
                     self._current_page.link = self._last_link_rel_self_href
                     self._last_link_rel_self_href = None
 
-                    if self._current_page.link not in self._page_links:
-                        self._pages.append(self._current_page)
-                        self._page_links.add(self._current_page.link)
+                if self._current_video:
+                    self._current_page.videos.append(self._current_video)
+                    self._current_video = None
+                    self._current_video_is_group = False
+
+                if self._current_page.link not in self._page_links:
+                    self._pages.append(self._current_page)
+                    self._page_links.add(self._current_page.link)
 
                 self._current_page = None
+
+            elif name == "media:group":
+                if self._current_video:
+                    self._current_page.videos.append(self._current_video)
+                    self._current_video = None
+                    self._current_video_is_group = False
 
             else:
                 if name == "title":
@@ -1337,6 +1872,9 @@ class PagesAtomSitemapParser(AbstractXMLSitemapParser):
                     # No 'issued' or 'published' were set before
                     if not self._current_page.publication_date:
                         self._current_page.publication_date = self._last_char_data
+
+                else:
+                    self._apply_media_end_element(name=name)
 
         super().xml_element_end(name=name)
 
