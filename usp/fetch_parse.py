@@ -1,3 +1,6 @@
+from usp.fetch_parse import AbstractXMLSitemapParser
+
+
 class PagesXMLSitemapParser(AbstractXMLSitemapParser):
     """
     Pages XML sitemap parser.
