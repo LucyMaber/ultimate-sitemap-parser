@@ -31,6 +31,8 @@ Features
   - `plain text sitemaps <https://www.sitemaps.org/protocol.html#otherformats>`_
   - `RSS 2.0 / Atom 0.3 / Atom 1.0 sitemaps <https://www.sitemaps.org/protocol.html#otherformats>`_
   - `Sitemaps linked from robots.txt <https://developers.google.com/search/reference/robots_txt#sitemap>`_
+  - `Media RSS <https://www.rssboard.org/media-rss>`
+  - `Google Video Sitemaps <https://developers.google.com/search/docs/crawling-indexing/sitemaps/video-sitemap>`_
 
 - Field-tested with ~1 million URLs as part of the `Media Cloud project <https://mediacloud.org/>`_
 - Error-tolerant with more common sitemap bugs

@@ -42,7 +42,7 @@ Ultimate Sitemap Parser
 
 Ultimate Sitemap Parser (USP) is a performant and robust Python library for parsing and crawling sitemaps.
 
-- **Supports all sitemap formats**: Sitemap XML, Google News, plain text, RSS 2.0, Atom 0.3/1.0.
+- **Supports all sitemap formats**: Sitemap XML, Google News, Image, Media RSS, Google Video, plain text, RSS 2.0, Atom 0.3/1.0.
 
 - **Error-tolerant**: Handles common sitemap bugs gracefully.
 
